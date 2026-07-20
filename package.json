@@ -1,0 +1,75 @@
+{
+  "name": "codex-gesture-dock",
+  "private": true,
+  "version": "0.4.0",
+  "description": "隐私优先的 Windows Codex 手势控制与摄像头辅助系统",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "dev:desktop": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && cross-env ELECTRON_START_URL=http://127.0.0.1:5173 electron .\"",
+    "build": "tsc -b && vite build",
+    "desktop": "npm run build && electron .",
+    "desktop:smoke": "npm run build && electron . --smoke-test",
+    "dist:win": "npm run build && electron-builder --win portable",
+    "lint": "eslint .",
+    "preview": "vite preview --host 127.0.0.1",
+    "release": "node scripts/release.mjs",
+    "version:check": "node scripts/version-check.mjs",
+    "release:test": "node --test scripts/tests/*.mjs",
+    "test": "vitest run && npm run release:test"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^0.10.22-rc.20250304",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@testing-library/react": "^16.1.0",
+    "@types/react": "^19.0.3",
+    "@types/react-dom": "^19.0.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^10.0.3",
+    "cross-env": "^10.1.0",
+    "electron": "^43.1.1",
+    "electron-builder": "^26.15.3",
+    "eslint": "^9.17.0",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "eslint-plugin-react-refresh": "^0.4.16",
+    "globals": "^15.14.0",
+    "jsdom": "^25.0.1",
+    "typescript": "~5.7.2",
+    "typescript-eslint": "^8.18.2",
+    "vite": "^6.0.5",
+    "vitest": "^2.1.8",
+    "wait-on": "^9.0.10"
+  },
+  "build": {
+    "appId": "com.codexgesturedock.desktop",
+    "productName": "Codex Gesture Dock",
+    "electronDist": "node_modules/electron/dist",
+    "asar": true,
+    "asarUnpack": [
+      "electron/codex-control.ps1"
+    ],
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "LICENSE",
+      "THIRD_PARTY_NOTICES.md",
+      "third_party_licenses/**/*"
+    ],
+    "directories": {
+      "output": "artifacts"
+    },
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "artifactName": "Codex-Gesture-Dock-${version}-portable.${ext}"
+    }
+  }
+}
