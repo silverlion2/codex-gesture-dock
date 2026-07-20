@@ -3,6 +3,12 @@
   "private": true,
   "version": "0.4.0",
   "description": "隐私优先的 Windows Codex 手势控制与摄像头辅助系统",
+  "author": "silverlion2",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/silverlion2/codex-gesture-dock.git"
+  },
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -11,7 +17,7 @@
     "build": "tsc -b && vite build",
     "desktop": "npm run build && electron .",
     "desktop:smoke": "npm run build && electron . --smoke-test",
-    "dist:win": "npm run build && electron-builder --win portable",
+    "dist:win": "npm run build && electron-builder --win portable --publish never",
     "lint": "eslint .",
     "preview": "vite preview --host 127.0.0.1",
     "release": "node scripts/release.mjs",
@@ -49,7 +55,6 @@
   "build": {
     "appId": "com.codexgesturedock.desktop",
     "productName": "Codex Gesture Dock",
-    "electronDist": "node_modules/electron/dist",
     "asar": true,
     "asarUnpack": [
       "electron/codex-control.ps1"
