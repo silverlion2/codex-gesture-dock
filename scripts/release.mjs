@@ -23,12 +23,18 @@ if (!targetArgument) {
   );
 }
 
-function executable(command) {
-  return process.platform === "win32" && command === "npm" ? "npm.cmd" : command;
+function commandInvocation(command, args) {
+  if (process.platform === "win32" && command === "npm") {
+    const npmCli = process.env.npm_execpath;
+    if (!npmCli) throw new Error("npm_execpath is required to run npm on Windows.");
+    return { executable: process.execPath, args: [npmCli, ...args] };
+  }
+  return { executable: command, args };
 }
 
 function run(command, args, options = {}) {
-  const result = spawnSync(executable(command), args, {
+  const invocation = commandInvocation(command, args);
+  const result = spawnSync(invocation.executable, invocation.args, {
     cwd: projectRoot,
     encoding: "utf8",
     stdio: options.capture ? ["ignore", "pipe", "pipe"] : "inherit",
@@ -44,7 +50,8 @@ function run(command, args, options = {}) {
 }
 
 function succeeds(command, args) {
-  const result = spawnSync(executable(command), args, {
+  const invocation = commandInvocation(command, args);
+  const result = spawnSync(invocation.executable, invocation.args, {
     cwd: projectRoot,
     stdio: "ignore",
   });
