@@ -1,7 +1,7 @@
 {
   "name": "codex-gesture-dock",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "隐私优先的 Windows Codex 手势控制与摄像头辅助系统",
   "author": "silverlion2",
   "license": "MIT",

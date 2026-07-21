@@ -4,6 +4,8 @@ All notable changes to Codex Gesture Dock are documented here.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-22
+
 ### Added
 
 - Live App Server thread, turn, and item event synchronization.
@@ -67,3 +69,4 @@ All notable changes to Codex Gesture Dock are documented here.
   the custom application protocol.
 
 [0.4.0]: https://github.com/silverlion2/codex-gesture-dock/releases/tag/v0.4.0
+[0.5.0]: https://github.com/silverlion2/codex-gesture-dock/releases/tag/v0.5.0

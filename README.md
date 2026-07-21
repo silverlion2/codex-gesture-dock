@@ -2,7 +2,7 @@
 
 一个隐私优先的 Windows Codex 控制系统。它通过本地摄像头手势、Codex App Server 和安全快捷键桥控制核心 Codex 工作流；“端正”坐姿监测是同一悬浮 Dock 中的辅助模块。平时只显示桌面角落的小按钮，点击后展开紧凑控制面板。MediaPipe 全程在本机分析画面，不录制或上传视频。
 
-本工作区由 Codex 任务“探索摄像头开源方案”迁移而来。原对话中的需求、决策、版本演进和验证结论见 [迁移档案](docs/imported-chat-exploration.md)，最初调研的开源项目见 [电脑摄像头开源方案地图](docs/open-source-camera-landscape.md)。当前源码版本为 0.4.0，正式构建从 [GitHub Releases](https://github.com/silverlion2/codex-gesture-dock/releases) 下载。
+本工作区由 Codex 任务“探索摄像头开源方案”迁移而来。原对话中的需求、决策、版本演进和验证结论见 [迁移档案](docs/imported-chat-exploration.md)，最初调研的开源项目见 [电脑摄像头开源方案地图](docs/open-source-camera-landscape.md)。当前源码版本为 0.5.0，正式构建从 [GitHub Releases](https://github.com/silverlion2/codex-gesture-dock/releases) 下载。
 
 这是一个非官方社区项目，与 OpenAI 没有隶属或背书关系。Codex 是其各自权利人的商标。
 
