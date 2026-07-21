@@ -102,6 +102,10 @@ npm run release -- patch --dry-run
 
 当前发行包尚未配置 Windows Authenticode 证书。更新器会核对 electron-builder 元数据中的 SHA-512，但它不能替代可信发布者签名；生产级可信更新仍需在 GitHub Actions 配置 `WIN_CSC_LINK` 与 `WIN_CSC_KEY_PASSWORD`。portable 版不会自动更新。
 
+### Code signing policy
+
+项目正在申请 SignPath Foundation 的开源项目 HSM 托管 Authenticode 签名。批准前发行包仍明确标记为未签名；批准后只有 GitHub 托管 Release Workflow 产生并经人工批准的项目二进制可以签名。角色、隐私、签名范围和失败关闭规则见 [Code signing policy](docs/code-signing-policy.md)。
+
 ## 验证
 
 ```powershell

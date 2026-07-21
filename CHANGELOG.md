@@ -4,6 +4,11 @@ All notable changes to Codex Gesture Dock are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- A public code-signing policy and a SignPath Foundation onboarding path for
+  HSM-backed Authenticode releases without repository-stored private keys.
+
 ## [0.5.0] - 2026-07-22
 
 ### Added
