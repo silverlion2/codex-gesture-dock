@@ -92,11 +92,11 @@ function recentFileId(threadId, turnId, absolutePath) {
 }
 
 function displayFilePath(cwd, absolutePath) {
-  const relativePath = path.relative(cwd, absolutePath)
+  const relativePath = path.win32.relative(cwd, absolutePath)
   if (
     relativePath &&
     !relativePath.startsWith('..') &&
-    !path.isAbsolute(relativePath)
+    !path.win32.isAbsolute(relativePath)
   ) {
     return relativePath
   }
@@ -384,7 +384,7 @@ class CodexAppServerClient {
           cwd,
           id: String(thread.id),
           preview: String(thread.preview || ''),
-          project: path.basename(cwd) || os.hostname(),
+          project: path.win32.basename(cwd) || os.hostname(),
           source: sourceName(thread.source),
           status: runtimeStatus(thread, archived, latestTurns[index]),
           title: cleanTitle(thread),
@@ -429,9 +429,9 @@ class CodexAppServerClient {
                 for (const change of item.changes) {
                   const rawPath = String(change?.path || '').trim()
                   if (!rawPath) continue
-                  const absolutePath = path.isAbsolute(rawPath)
-                    ? path.normalize(rawPath)
-                    : path.resolve(task.cwd, rawPath)
+                  const absolutePath = path.win32.isAbsolute(rawPath)
+                    ? path.win32.normalize(rawPath)
+                    : path.win32.resolve(task.cwd, rawPath)
                   const kind = ['add', 'delete', 'update'].includes(change?.kind?.type)
                     ? change.kind.type
                     : 'update'
@@ -441,7 +441,7 @@ class CodexAppServerClient {
                     exists: fs.existsSync(absolutePath),
                     id: recentFileId(task.id, turn.id, absolutePath),
                     kind,
-                    name: path.basename(absolutePath),
+                    name: path.win32.basename(absolutePath),
                     project: task.project,
                     relativePath: displayFilePath(task.cwd, absolutePath),
                     taskId: task.id,
@@ -451,14 +451,14 @@ class CodexAppServerClient {
               }
 
               if (item?.type === 'imageGeneration' && item.savedPath) {
-                const absolutePath = path.normalize(String(item.savedPath))
+                const absolutePath = path.win32.normalize(String(item.savedPath))
                 files.push({
                   absolutePath,
                   completedAt,
                   exists: fs.existsSync(absolutePath),
                   id: recentFileId(task.id, turn.id, absolutePath),
                   kind: 'generated',
-                  name: path.basename(absolutePath),
+                  name: path.win32.basename(absolutePath),
                   project: task.project,
                   relativePath: displayFilePath(task.cwd, absolutePath),
                   taskId: task.id,

@@ -11,7 +11,7 @@ const RUNTIME_NOTIFICATION_METHODS = new Set([
 
 function normalizeWindowsPath(value) {
   const candidate = String(value || '').trim()
-  return candidate ? path.resolve(candidate).toLowerCase() : ''
+  return candidate ? path.win32.resolve(candidate).toLowerCase() : ''
 }
 
 function chooseBoundTask(tasks, preferredId, workspacePath) {
