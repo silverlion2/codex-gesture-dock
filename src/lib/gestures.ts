@@ -15,20 +15,39 @@ export type CodexAction =
   | 'sidebar'
   | 'search_tasks'
 
+export type WindowsAction =
+  | 'show_desktop'
+  | 'task_view'
+  | 'open_explorer'
+  | 'volume_up'
+  | 'volume_down'
+  | 'volume_mute'
+
+export type GestureAction = CodexAction | WindowsAction
+export type GestureMode = 'codex' | 'windows'
+
 export interface CodexActionResult {
   action: CodexAction
   message: string
   ok: boolean
 }
 
+export interface WindowsActionResult {
+  action: WindowsAction
+  message: string
+  ok: boolean
+}
+
+export type GestureActionResult = CodexActionResult | WindowsActionResult
+
 export interface GestureBinding {
-  action: CodexAction | null
+  action: GestureAction | null
   actionLabel: string
   gestureLabel: string
   symbol: string
 }
 
-export const GESTURE_BINDINGS: Record<GestureName, GestureBinding> = {
+export const CODEX_GESTURE_BINDINGS: Record<GestureName, GestureBinding> = {
   Victory: {
     action: 'quick_chat',
     actionLabel: '打开快速对话',
@@ -67,6 +86,58 @@ export const GESTURE_BINDINGS: Record<GestureName, GestureBinding> = {
   },
 }
 
+export const WINDOWS_GESTURE_BINDINGS: Record<GestureName, GestureBinding> = {
+  Victory: {
+    action: 'task_view',
+    actionLabel: '打开任务视图',
+    gestureLabel: '胜利手势',
+    symbol: '✌',
+  },
+  Pointing_Up: {
+    action: 'volume_up',
+    actionLabel: '提高系统音量',
+    gestureLabel: '食指向上',
+    symbol: '☝',
+  },
+  Open_Palm: {
+    action: 'show_desktop',
+    actionLabel: '显示桌面',
+    gestureLabel: '张开手掌',
+    symbol: '✋',
+  },
+  Thumb_Up: {
+    action: 'open_explorer',
+    actionLabel: '打开文件资源管理器',
+    gestureLabel: '竖起拇指',
+    symbol: '👍',
+  },
+  ILoveYou: {
+    action: 'volume_down',
+    actionLabel: '降低系统音量',
+    gestureLabel: 'I Love You 手势',
+    symbol: '🤟',
+  },
+  Closed_Fist: {
+    action: 'volume_mute',
+    actionLabel: '静音 / 恢复声音',
+    gestureLabel: '握拳',
+    symbol: '✊',
+  },
+}
+
+// Backwards-compatible name used by the Codex task picker and existing tests.
+export const GESTURE_BINDINGS = CODEX_GESTURE_BINDINGS
+
+export function getGestureBindings(mode: GestureMode) {
+  return mode === 'windows' ? WINDOWS_GESTURE_BINDINGS : CODEX_GESTURE_BINDINGS
+}
+
+export function isWindowsAction(action: GestureAction): action is WindowsAction {
+  return Object.values(WINDOWS_GESTURE_BINDINGS).some(
+    (binding) => binding.action === action,
+  )
+}
+
 export interface GestureMachineState {
   awaitingNeutral: boolean
   candidate: GestureName | null
@@ -82,7 +153,7 @@ export interface GestureFrame {
 }
 
 export interface GestureMachineResult {
-  action: CodexAction | null
+  action: GestureAction | null
   binding: GestureBinding | null
   gesture: GestureName | null
   state: GestureMachineState
@@ -101,12 +172,13 @@ export const initialGestureMachineState: GestureMachineState = {
 }
 
 export function isGestureName(value: string): value is GestureName {
-  return value in GESTURE_BINDINGS
+  return value in CODEX_GESTURE_BINDINGS
 }
 
 export function advanceGestureMachine(
   current: GestureMachineState,
   frame: GestureFrame,
+  bindings: Record<GestureName, GestureBinding> = CODEX_GESTURE_BINDINGS,
 ): GestureMachineResult {
   const recognized =
     frame.name &&
@@ -119,7 +191,7 @@ export function advanceGestureMachine(
     if (recognized) {
       return {
         action: null,
-        binding: GESTURE_BINDINGS[recognized],
+        binding: bindings[recognized],
         gesture: null,
         state: {
           ...current,
@@ -155,7 +227,7 @@ export function advanceGestureMachine(
   if (current.candidate !== recognized || current.candidateSince === null) {
     return {
       action: null,
-      binding: GESTURE_BINDINGS[recognized],
+      binding: bindings[recognized],
       gesture: null,
       state: {
         ...initialGestureMachineState,
@@ -169,7 +241,7 @@ export function advanceGestureMachine(
     1,
     (frame.now - current.candidateSince) / GESTURE_HOLD_MS,
   )
-  const binding = GESTURE_BINDINGS[recognized]
+  const binding = bindings[recognized]
 
   if (progress < 1) {
     return {

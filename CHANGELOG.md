@@ -10,6 +10,34 @@ All notable changes to Codex Gesture Dock are documented here.
 - Persistent current-task binding with workspace-aware automatic selection.
 - App Server and Windows desktop connection diagnostics in the main panel.
 - A phased Windows UI Automation control design and security boundary.
+- Separate Windows Control Core and Codex program-adapter layers.
+- A bounded, read-only UI Automation inspector that redacts content-bearing
+  controls and exposes only structural diagnostics.
+- Verified Codex MSIX identity checks using package name, publisher, family,
+  install path, process, and foreground-window validation.
+- Process-scoped live Windows events, persistent emergency stop, and daily
+  metadata-only control audit logs.
+- A complete Chinese user guide for installation, gestures, task and file
+  workflows, approvals, emergency stop, privacy, and troubleshooting.
+- An independent Windows gesture mode for show desktop, task view, File
+  Explorer, volume up/down, and mute, backed by a fixed system-action allowlist.
+- An NSIS installer with GitHub Releases auto-update metadata, background
+  download progress, and user-confirmed restart/install.
+- A portable build alongside the installable build for manual recovery and
+  environments that do not want installation.
+
+### Changed
+
+- Show Codex Adapter, Windows Control Core, and read-only UI Automation as
+  independent integration states.
+- Let the Codex Adapter own the App Server client lifecycle and expose all
+  program-level operations through one adapter boundary.
+- Use the verified shortcut backend for Codex semantic actions because the
+  current WebView exposes no stable business UI Automation controls.
+- Persist the selected Codex/Windows gesture mode and render the matching
+  six-action gesture book without hiding the live camera.
+- Publish installer, portable executable, blockmap, `latest.yml`, and SHA-256
+  checksums from one guarded tag workflow.
 
 ### Fixed
 

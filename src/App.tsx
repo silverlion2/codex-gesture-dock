@@ -13,16 +13,22 @@ import {
   usePoseMonitor,
   type ReminderSettings,
 } from './hooks/usePoseMonitor'
-import type {
-  CodexAction,
-  CodexActionResult,
-  GestureName,
+import {
+  getGestureBindings,
+  isWindowsAction,
+  type CodexAction,
+  type CodexActionResult,
+  type GestureAction,
+  type GestureActionResult,
+  type GestureMode,
+  type GestureName,
 } from './lib/gestures'
 import type {
   CodexApprovalDecision,
   CodexApprovalRequest,
 } from './lib/codexApprovals'
 import type { CodexIntegrationStatus } from './lib/codexIntegration'
+import type { AppUpdateStatus } from './lib/appUpdate'
 
 const initialSettings: ReminderSettings = {
   postureEnabled: true,
@@ -30,6 +36,18 @@ const initialSettings: ReminderSettings = {
   breakEnabled: true,
   breakMinutes: 50,
   gestureEnabled: true,
+}
+
+const GESTURE_MODE_STORAGE_KEY = 'codex-gesture-dock.gesture-mode.v1'
+
+function initialGestureMode(): GestureMode {
+  try {
+    return window.localStorage.getItem(GESTURE_MODE_STORAGE_KEY) === 'windows'
+      ? 'windows'
+      : 'codex'
+  } catch {
+    return 'codex'
+  }
 }
 
 function initialExpandedState() {
@@ -67,6 +85,7 @@ function WidgetApp() {
   const microphoneTimerRef = useRef<number | null>(null)
   const [expanded, setExpanded] = useState(initialExpandedState)
   const [settings, setSettings] = useState(initialSettings)
+  const [gestureMode, setGestureMode] = useState<GestureMode>(initialGestureMode)
   const [taskPickerOpen, setTaskPickerOpen] = useState(false)
   const [approvalQueue, setApprovalQueue] =
     useState<CodexApprovalRequest[]>(initialApprovalQueue)
@@ -75,6 +94,8 @@ function WidgetApp() {
   const [microphoneActive, setMicrophoneActive] = useState(false)
   const [integrationStatus, setIntegrationStatus] =
     useState<CodexIntegrationStatus | null>(null)
+  const [windowsControlBusy, setWindowsControlBusy] = useState(false)
+  const [updateStatus, setUpdateStatus] = useState<AppUpdateStatus | null>(null)
   const currentApproval = approvalQueue[0] ?? null
 
   const showReminder = useCallback((message: string) => {
@@ -92,6 +113,46 @@ function WidgetApp() {
       // Keep the last known state while the local App Server reconnects.
     }
   }, [])
+
+  const setWindowsControlEnabled = useCallback(
+    async (enabled: boolean) => {
+      const controls = window.widgetControls
+      if (!controls) return
+      setWindowsControlBusy(true)
+      try {
+        const status = await controls.setWindowsControlEnabled(enabled)
+        showReminder(
+          status.enabled
+            ? 'Windows 桌面控制已恢复'
+            : 'Windows 桌面控制已暂停',
+        )
+        await refreshIntegrationStatus()
+      } catch (caught) {
+        showReminder(
+          caught instanceof Error ? caught.message : 'Windows 控制状态切换失败',
+        )
+      } finally {
+        setWindowsControlBusy(false)
+      }
+    },
+    [refreshIntegrationStatus, showReminder],
+  )
+
+  const runUpdateAction = useCallback(async () => {
+    const controls = window.widgetControls
+    if (!controls || !updateStatus?.supported) return
+    try {
+      if (updateStatus.phase === 'downloaded') {
+        await controls.installUpdate()
+        return
+      }
+      const status = await controls.checkForUpdates()
+      setUpdateStatus(status)
+      showReminder(status.message)
+    } catch (caught) {
+      showReminder(caught instanceof Error ? caught.message : '检查更新失败')
+    }
+  }, [showReminder, updateStatus])
 
   const monitor = usePoseMonitor({
     videoRef,
@@ -136,6 +197,34 @@ function WidgetApp() {
       return result
     },
     [showReminder],
+  )
+
+  const runGestureAction = useCallback(
+    async (action: GestureAction): Promise<GestureActionResult> => {
+      if (!isWindowsAction(action)) return runCodexAction(action)
+      const controls = window.widgetControls
+      try {
+        const result = controls
+          ? await controls.runWindowsAction(action)
+          : {
+              ok: false as const,
+              action,
+              message: '请在 Windows 桌面版中使用系统手势控制',
+            }
+        showReminder(result.message)
+        return result
+      } catch (caught) {
+        const result = {
+          ok: false as const,
+          action,
+          message:
+            caught instanceof Error ? caught.message : 'Windows 控制桥暂时不可用',
+        }
+        showReminder(result.message)
+        return result
+      }
+    },
+    [runCodexAction, showReminder],
   )
 
   const openTaskPicker = useCallback(() => {
@@ -199,22 +288,38 @@ function WidgetApp() {
         void window.widgetControls?.sendTaskPickerGesture(name).catch(() => {})
         return true
       }
-      if (name === 'Open_Palm') {
+      if (gestureMode === 'codex' && name === 'Open_Palm') {
         openTaskPicker()
         return true
       }
       return false
     },
-    [currentApproval, openTaskPicker, respondCodexApproval, taskPickerOpen],
+    [
+      currentApproval,
+      gestureMode,
+      openTaskPicker,
+      respondCodexApproval,
+      taskPickerOpen,
+    ],
   )
 
+  const gestureBindings = getGestureBindings(gestureMode)
   const gesture = useGestureControl({
     active: monitor.phase === 'monitoring',
+    bindings: gestureBindings,
     enabled: settings.gestureEnabled,
-    onAction: runCodexAction,
+    onAction: runGestureAction,
     onGesture: handleGesture,
     videoRef,
   })
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(GESTURE_MODE_STORAGE_KEY, gestureMode)
+    } catch {
+      // Local persistence is optional; gesture control remains functional.
+    }
+  }, [gestureMode])
 
   useEffect(() => {
     const controls = window.widgetControls
@@ -232,6 +337,7 @@ function WidgetApp() {
 
     void controls.getState().then(setExpanded).catch(() => {})
     void refreshIntegrationStatus()
+    void controls.getUpdateStatus().then(setUpdateStatus).catch(() => {})
     void controls
       .getPendingCodexApprovals()
       .then((requests) => requests.forEach(enqueueApproval))
@@ -249,6 +355,15 @@ function WidgetApp() {
     const removeIntegrationListener = controls.onCodexIntegrationChanged(() => {
       void refreshIntegrationStatus()
     })
+    const removeWindowsListener = controls.onWindowsControlEvent(() => {
+      void refreshIntegrationStatus()
+    })
+    const removeUpdateListener = controls.onUpdateStatus((status) => {
+      setUpdateStatus(status)
+      if (status.phase === 'available' || status.phase === 'downloaded') {
+        showReminder(status.message)
+      }
+    })
     const integrationTimer = window.setInterval(
       () => void refreshIntegrationStatus(),
       8_000,
@@ -261,6 +376,8 @@ function WidgetApp() {
       removeClearListener()
       removeRuntimeListener()
       removeIntegrationListener()
+      removeWindowsListener()
+      removeUpdateListener()
       window.clearInterval(integrationTimer)
     }
   }, [refreshIntegrationStatus, showReminder])
@@ -388,7 +505,12 @@ function WidgetApp() {
               />
             </div>
 
-            <WidgetSettings settings={settings} onChange={setSettings} />
+            <WidgetSettings
+              settings={settings}
+              gestureMode={gestureMode}
+              onChange={setSettings}
+              onGestureModeChange={setGestureMode}
+            />
           </section>
 
           <aside className="dashboard-controls" aria-label="手势手册与会话控制">
@@ -396,6 +518,7 @@ function WidgetApp() {
               enabled={settings.gestureEnabled}
               gesture={gesture}
               microphoneActive={microphoneActive}
+              mode={gestureMode}
             />
 
             {currentApproval ? (
@@ -410,7 +533,15 @@ function WidgetApp() {
                   <span>SESSION CONTROL</span>
                   <strong>镜头保持在主面板</strong>
                 </header>
-                <CodexIntegrationPanel status={integrationStatus} />
+                <CodexIntegrationPanel
+                  status={integrationStatus}
+                  controlBusy={windowsControlBusy}
+                  updateStatus={updateStatus}
+                  onUpdateAction={() => void runUpdateAction()}
+                  onWindowsControlToggle={(enabled) =>
+                    void setWindowsControlEnabled(enabled)
+                  }
+                />
                 <button
                   className="open-task-window"
                   type="button"

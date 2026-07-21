@@ -2,6 +2,8 @@ import type {
   CodexAction,
   CodexActionResult,
   GestureName,
+  WindowsAction,
+  WindowsActionResult,
 } from './lib/gestures'
 import type {
   CodexTaskAction,
@@ -21,7 +23,11 @@ import type {
   CodexIntegrationStatus,
   CodexRuntimeEvent,
   CodexTaskBindingResult,
+  CodexUiAutomationStatus,
+  WindowsControlEvent,
+  WindowsControlStatus,
 } from './lib/codexIntegration'
+import type { AppUpdateStatus } from './lib/appUpdate'
 
 export interface WidgetControls {
   isElectron: true
@@ -33,7 +39,13 @@ export interface WidgetControls {
   sendTaskPickerGesture: (gesture: GestureName) => Promise<boolean>
   showMessage: (message: string) => Promise<boolean>
   runCodexAction: (action: CodexAction) => Promise<CodexActionResult>
+  runWindowsAction: (action: WindowsAction) => Promise<WindowsActionResult>
+  getUpdateStatus: () => Promise<AppUpdateStatus>
+  checkForUpdates: () => Promise<AppUpdateStatus>
+  installUpdate: () => Promise<boolean>
   getCodexIntegrationStatus: () => Promise<CodexIntegrationStatus>
+  inspectCodexUi: () => Promise<CodexUiAutomationStatus>
+  setWindowsControlEnabled: (enabled: boolean) => Promise<WindowsControlStatus>
   bindCodexTask: (threadId: string) => Promise<CodexTaskBindingResult>
   listCodexTasks: (filter: CodexTaskFilter) => Promise<CodexTaskListResult>
   listRecentCodexFiles: () => Promise<CodexRecentFilesResult>
@@ -58,6 +70,10 @@ export interface WidgetControls {
     callback: (runtimeEvent: CodexRuntimeEvent) => void,
   ) => () => void
   onCodexIntegrationChanged: (callback: () => void) => () => void
+  onWindowsControlEvent: (
+    callback: (event: WindowsControlEvent) => void,
+  ) => () => void
+  onUpdateStatus: (callback: (status: AppUpdateStatus) => void) => () => void
   onStateChange: (callback: (expanded: boolean) => void) => () => void
   onTaskPickerStateChange: (callback: (open: boolean) => void) => () => void
   onTaskPickerGesture: (callback: (gesture: GestureName) => void) => () => void

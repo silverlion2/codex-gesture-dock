@@ -1,6 +1,7 @@
 const {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   net,
   protocol,
@@ -10,13 +11,15 @@ const {
 } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs')
-const { execFile } = require('node:child_process')
 const { pathToFileURL } = require('node:url')
-const { CodexAppServerClient } = require('./codex-app-server.cjs')
+const { CodexProgramAdapter } = require('./adapters/codex-adapter.cjs')
+const { autoUpdater } = require('electron-updater')
+const { DesktopAutoUpdater } = require('./auto-update.cjs')
 const {
   chooseBoundTask,
   normalizeCodexNotification,
 } = require('./codex-integration.cjs')
+const { WindowsControlCore } = require('./windows-control.cjs')
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -50,46 +53,36 @@ let widgetWindow = null
 let taskPickerWindow = null
 let expanded = false
 let lastCodexActionAt = 0
+let lastWindowsActionAt = 0
 let boundCodexTaskId = ''
 let lastCodexRuntimeEvent = null
 let integrationTasks = []
 let integrationTasksAt = 0
 let integrationTasksPromise = null
-let desktopStatusAt = 0
-let desktopStatus = {
-  connected: false,
-  processId: null,
-  processName: '',
-  windowTitle: '',
-  message: '尚未检查 Codex 桌面窗口',
-}
 const recentCodexFiles = new Map()
 const pendingCodexApprovals = new Map()
-const codexTasks = new CodexAppServerClient({
+const desktopAutoUpdater = new DesktopAutoUpdater({
+  updater: autoUpdater,
+  currentVersion: app.getVersion(),
+  isPackaged: app.isPackaged,
+  isPortable: Boolean(process.env.PORTABLE_EXECUTABLE_FILE),
+  isSmokeTest: isAnySmokeTest,
+  onStatus: (status) => {
+    if (widgetWindow && !widgetWindow.isDestroyed()) {
+      widgetWindow.webContents.send('updates:status', status)
+    }
+  },
+})
+const windowsControl = new WindowsControlCore({
+  resolveScriptPath: getDesktopScriptPath,
+  onAudit: appendWindowsControlAudit,
+})
+const codexAdapter = new CodexProgramAdapter({
+  windowsControl,
   onNotification: handleCodexNotification,
   onServerRequest: handleCodexServerRequest,
   onServerRequestsCleared: clearPendingCodexApprovals,
 })
-
-const CODEX_ACTIONS = new Set([
-  'quick_chat',
-  'dictation',
-  'command_menu',
-  'review',
-  'terminal',
-  'sidebar',
-  'search_tasks',
-])
-
-const CODEX_ACTION_LABELS = {
-  quick_chat: '已打开 Codex 快速对话',
-  dictation: '已激活 Codex 话筒',
-  command_menu: '已打开 Codex 命令菜单',
-  review: '已打开 Codex 代码审查',
-  terminal: '已切换 Codex 集成终端',
-  sidebar: '已切换 Codex 任务侧栏',
-  search_tasks: '已打开 Codex 历史任务搜索',
-}
 
 const TASK_FILTERS = new Set(['recent', 'completed', 'archived'])
 const GESTURE_NAMES = new Set([
@@ -157,7 +150,7 @@ function handleCodexServerRequest(request) {
   const approval = normalizeCodexApproval(request)
   if (!approval) {
     try {
-      codexTasks.rejectServerRequest(
+      codexAdapter.rejectServerRequest(
         request.id,
         '请在 Codex 桌面应用中处理此交互请求',
       )
@@ -197,6 +190,54 @@ function handleCodexNotification(notification) {
 
 function getTaskBindingPath() {
   return path.join(app.getPath('userData'), 'codex-task-binding.json')
+}
+
+function getWindowsControlStatePath() {
+  return path.join(app.getPath('userData'), 'windows-control-state.json')
+}
+
+function loadWindowsControlEnabled() {
+  try {
+    const state = JSON.parse(
+      fs.readFileSync(getWindowsControlStatePath(), 'utf8'),
+    )
+    return state?.enabled !== false
+  } catch {
+    return true
+  }
+}
+
+function persistWindowsControlEnabled(enabled) {
+  try {
+    const targetPath = getWindowsControlStatePath()
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true })
+    fs.writeFileSync(
+      targetPath,
+      JSON.stringify({ enabled: Boolean(enabled) }, null, 2),
+      'utf8',
+    )
+  } catch (error) {
+    console.warn('Windows control state could not be persisted:', error)
+  }
+}
+
+function appendWindowsControlAudit(entry) {
+  try {
+    const day = new Date().toISOString().slice(0, 10)
+    const auditDirectory = path.join(app.getPath('userData'), 'audit')
+    fs.mkdirSync(auditDirectory, { recursive: true })
+    fs.appendFileSync(
+      path.join(auditDirectory, `windows-control-${day}.jsonl`),
+      `${JSON.stringify(entry)}\n`,
+      'utf8',
+    )
+  } catch (error) {
+    console.warn('Windows control audit could not be written:', error)
+  }
+}
+
+function handleWindowsControlEvent(event) {
+  sendIntegrationChanged('windows:control-event', event)
 }
 
 function loadTaskBinding() {
@@ -258,6 +299,8 @@ function finishSmoke(payload, exitCode) {
   }
 
   console.log(JSON.stringify(report))
+  codexAdapter.close()
+  setTimeout(() => process.exit(exitCode), 1_500)
   app.exit(exitCode)
 }
 
@@ -394,124 +437,16 @@ function createTaskPickerWindow() {
   return taskPickerWindow
 }
 
-function getCodexControlScriptPath() {
+function getDesktopScriptPath(scriptName) {
   if (app.isPackaged) {
     return path.join(
       process.resourcesPath,
       'app.asar.unpacked',
       'electron',
-      'codex-control.ps1',
+      scriptName,
     )
   }
-  return path.join(__dirname, 'codex-control.ps1')
-}
-
-function runCodexAction(action) {
-  return new Promise((resolve) => {
-    execFile(
-      'powershell.exe',
-      [
-        '-NoLogo',
-        '-NoProfile',
-        '-NonInteractive',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-File',
-        getCodexControlScriptPath(),
-        '-Action',
-        action,
-      ],
-      {
-        timeout: 5_000,
-        windowsHide: true,
-      },
-      (error) => {
-        if (!error) {
-          resolve({
-            ok: true,
-            action,
-            message: CODEX_ACTION_LABELS[action],
-          })
-          return
-        }
-
-        const exitCode = Number(error.code)
-        const message =
-          exitCode === 2
-            ? '没有找到正在运行的 Codex 窗口'
-            : exitCode === 3 || exitCode === 4
-              ? 'Codex 窗口未能安全获得焦点，已取消快捷键'
-              : 'Codex 快捷键执行失败'
-        resolve({ ok: false, action, message })
-      },
-    )
-  })
-}
-
-function inspectCodexDesktop({ force = false } = {}) {
-  const now = Date.now()
-  if (!force && now - desktopStatusAt < 10_000) {
-    return Promise.resolve(desktopStatus)
-  }
-
-  return new Promise((resolve) => {
-    execFile(
-      'powershell.exe',
-      [
-        '-NoLogo',
-        '-NoProfile',
-        '-NonInteractive',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-File',
-        getCodexControlScriptPath(),
-        '-Action',
-        'quick_chat',
-        '-DryRun',
-      ],
-      {
-        timeout: 5_000,
-        windowsHide: true,
-      },
-      (error, stdout) => {
-        desktopStatusAt = Date.now()
-        if (!error) {
-          try {
-            const result = JSON.parse(String(stdout).trim())
-            desktopStatus = {
-              connected: true,
-              processId: Number(result.processId) || null,
-              processName: String(result.processName || ''),
-              windowTitle: String(result.windowTitle || ''),
-              message: 'Codex 桌面窗口已就绪',
-            }
-          } catch {
-            desktopStatus = {
-              connected: false,
-              processId: null,
-              processName: '',
-              windowTitle: '',
-              message: 'Codex 桌面窗口返回了无效状态',
-            }
-          }
-          resolve(desktopStatus)
-          return
-        }
-
-        desktopStatus = {
-          connected: false,
-          processId: null,
-          processName: '',
-          windowTitle: '',
-          message:
-            Number(error.code) === 2
-              ? '没有找到正在运行的 Codex 桌面窗口'
-              : 'Codex 桌面窗口诊断失败',
-        }
-        resolve(desktopStatus)
-      },
-    )
-  })
+  return path.join(__dirname, scriptName)
 }
 
 function loadIntegrationTasks({ force = false } = {}) {
@@ -521,7 +456,7 @@ function loadIntegrationTasks({ force = false } = {}) {
   }
   if (integrationTasksPromise) return integrationTasksPromise
 
-  integrationTasksPromise = codexTasks
+  integrationTasksPromise = codexAdapter
     .listTasks('recent')
     .then((tasks) => {
       integrationTasks = tasks
@@ -535,9 +470,10 @@ function loadIntegrationTasks({ force = false } = {}) {
 }
 
 async function getCodexIntegrationStatus() {
-  const [taskResult, desktopResult] = await Promise.allSettled([
+  const runtime = codexAdapter.getRuntimeInfo()
+  const [taskResult, layerResult] = await Promise.allSettled([
     loadIntegrationTasks(),
-    inspectCodexDesktop(),
+    codexAdapter.getLayerStatus(),
   ])
   const tasks = taskResult.status === 'fulfilled' ? taskResult.value : []
   const boundTask = chooseBoundTask(tasks, boundCodexTaskId, process.cwd())
@@ -546,20 +482,20 @@ async function getCodexIntegrationStatus() {
     persistTaskBinding()
   }
 
-  const runtime = codexTasks.getRuntimeInfo()
-  const desktop = desktopResult.status === 'fulfilled'
-    ? desktopResult.value
-    : desktopStatus
+  const layerStatus = layerResult.status === 'fulfilled'
+    ? layerResult.value
+    : codexAdapter.getLayerSnapshot()
+  const desktop = layerStatus.desktop
   const connected = runtime.connected
 
   return {
     ok: connected || desktop.connected,
     connected,
-    controlMode: 'app-server+windows-allowlist',
+    controlMode: 'codex-adapter+windows-core',
     boundTask,
     taskCount: tasks.length,
     runtime,
-    desktop,
+    ...layerStatus,
     lastEvent: lastCodexRuntimeEvent,
     message: connected
       ? boundTask
@@ -634,7 +570,7 @@ function registerIpc() {
   })
 
   ipcMain.handle('codex:run-action', async (event, action) => {
-    if (!isTrustedSender(event) || !CODEX_ACTIONS.has(action)) {
+    if (!isTrustedSender(event) || !codexAdapter.supportsDesktopAction(action)) {
       return { ok: false, action, message: '不支持的 Codex 动作' }
     }
 
@@ -643,7 +579,72 @@ function registerIpc() {
       return { ok: false, action, message: '手势动作过快，已忽略' }
     }
     lastCodexActionAt = now
-    return runCodexAction(action)
+    return codexAdapter.runDesktopAction(action)
+  })
+
+  ipcMain.handle('windows:run-action', async (event, action) => {
+    if (!isTrustedSender(event) || !windowsControl.supportsAction('windows', action)) {
+      return { ok: false, action, message: '\u4e0d\u652f\u6301\u7684 Windows \u52a8\u4f5c' }
+    }
+
+    const now = Date.now()
+    if (now - lastWindowsActionAt < 700) {
+      return { ok: false, action, message: '\u624b\u52bf\u52a8\u4f5c\u8fc7\u5feb\uff0c\u5df2\u5ffd\u7565' }
+    }
+    lastWindowsActionAt = now
+    return windowsControl.runAction('windows', action)
+  })
+
+  ipcMain.handle('updates:get-status', (event) => {
+    if (!isTrustedSender(event)) return desktopAutoUpdater.getStatus()
+    return desktopAutoUpdater.getStatus()
+  })
+
+  ipcMain.handle('updates:check', async (event) => {
+    if (!isTrustedSender(event)) return desktopAutoUpdater.getStatus()
+    return desktopAutoUpdater.check()
+  })
+
+  ipcMain.handle('updates:install', async (event) => {
+    if (!isWidgetSender(event)) return false
+    const status = desktopAutoUpdater.getStatus()
+    if (status.phase !== 'downloaded') return false
+    const response = await dialog.showMessageBox(widgetWindow, {
+      type: 'info',
+      title: '\u5b89\u88c5 Codex Gesture Dock \u66f4\u65b0',
+      message: `\u65b0\u7248\u672c ${status.availableVersion || ''} \u5df2\u4e0b\u8f7d`,
+      detail: '\u91cd\u542f\u5e94\u7528\u540e\u5c06\u5b89\u88c5\u66f4\u65b0\u3002\u672a\u4fdd\u5b58\u7684 Codex \u4efb\u52a1\u4e0d\u4f1a\u7531 Dock \u81ea\u52a8\u63d0\u4ea4\u3002',
+      buttons: ['\u91cd\u542f\u5e76\u5b89\u88c5', '\u7a0d\u540e'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    })
+    return response.response === 0 ? desktopAutoUpdater.install() : false
+  })
+
+  ipcMain.handle('windows:inspect-codex-ui', async (event) => {
+    if (!isTrustedSender(event)) {
+      return {
+        ok: false,
+        mode: 'read-only',
+        elementCount: 0,
+        truncated: false,
+        message: '无法从当前窗口执行 UI Automation 检查',
+      }
+    }
+    return codexAdapter.inspectUi({ force: true })
+  })
+
+  ipcMain.handle('windows:set-control-enabled', (event, enabled) => {
+    if (!isWidgetSender(event) || typeof enabled !== 'boolean') {
+      return codexAdapter.getLayerSnapshot().control
+    }
+    const status = codexAdapter.setWindowsControlEnabled(enabled)
+    persistWindowsControlEnabled(status.enabled)
+    sendIntegrationChanged('codex:integration-changed', {
+      windowsControlEnabled: status.enabled,
+    })
+    return status
   })
 
   ipcMain.handle('codex:get-integration-status', async (event) => {
@@ -654,8 +655,8 @@ function registerIpc() {
         controlMode: 'unavailable',
         boundTask: null,
         taskCount: 0,
-        runtime: codexTasks.getRuntimeInfo(),
-        desktop: desktopStatus,
+        runtime: codexAdapter.getRuntimeInfo(),
+        ...codexAdapter.getLayerSnapshot(),
         lastEvent: null,
         message: '无法从当前窗口读取 Codex 对接状态',
       }
@@ -682,7 +683,7 @@ function registerIpc() {
     }
 
     try {
-      const tasks = await codexTasks.listTasks(filter)
+      const tasks = await codexAdapter.listTasks(filter)
       if (filter === 'recent') {
         integrationTasks = tasks
         integrationTasksAt = Date.now()
@@ -714,7 +715,7 @@ function registerIpc() {
     }
 
     try {
-      const files = await codexTasks.listRecentFiles()
+      const files = await codexAdapter.listRecentFiles()
       recentCodexFiles.clear()
       for (const file of files) {
         recentCodexFiles.set(file.id, file.absolutePath)
@@ -797,7 +798,7 @@ function registerIpc() {
       }
 
       try {
-        codexTasks.respondToServerRequest(requestId, { decision })
+        codexAdapter.respondToServerRequest(requestId, { decision })
         pendingCodexApprovals.delete(requestId)
         return {
           ok: true,
@@ -833,11 +834,11 @@ function registerIpc() {
       }
 
       if (action === 'archive') {
-        await codexTasks.archiveTask(threadId)
+        await codexAdapter.archiveTask(threadId)
         return { ok: true, taskId: threadId, action, message: '任务已归档' }
       }
 
-      const resumedThreadId = await codexTasks.startTaskAction(threadId, action)
+      const resumedThreadId = await codexAdapter.startTaskAction(threadId, action)
       await openCodexThread(resumedThreadId)
       const labels = {
         continue: 'Codex 已继续处理这个任务',
@@ -1048,6 +1049,20 @@ function createWidgetWindow() {
                 }
               })()
             `)
+            const safety = await widgetWindow.webContents.executeJavaScript(`
+              (async () => {
+                const paused = await window.widgetControls.setWindowsControlEnabled(false)
+                const blocked = await window.widgetControls.runCodexAction('dictation')
+                const windowsBlocked = await window.widgetControls.runWindowsAction('show_desktop')
+                const resumed = await window.widgetControls.setWindowsControlEnabled(true)
+                return {
+                  paused: paused.enabled === false,
+                  actionBlocked: blocked.ok === false,
+                  windowsActionBlocked: windowsBlocked.ok === false,
+                  resumed: resumed.enabled === true,
+                }
+              })()
+            `)
             const taskPickerVisible = await taskWindow.webContents.executeJavaScript(`
               Boolean(document.querySelector('.task-window-root .task-picker'))
             `)
@@ -1061,7 +1076,11 @@ function createWidgetWindow() {
               taskWindow.webContents.getURL().includes('view=tasks') &&
               taskPickerVisible &&
               layout.cameraVisible &&
-              layout.gestureCount === 6
+              layout.gestureCount === 6 &&
+              safety.paused &&
+              safety.actionBlocked &&
+              safety.windowsActionBlocked &&
+              safety.resumed
 
             clearTimeout(timeout)
             finishSmoke(
@@ -1074,6 +1093,7 @@ function createWidgetWindow() {
                 widgetUrl: widgetWindow.webContents.getURL(),
                 taskUrl: taskWindow.webContents.getURL(),
                 ...layout,
+                ...safety,
                 taskPickerVisible,
               },
               passed ? 0 : 1,
@@ -1102,13 +1122,19 @@ function createWidgetWindow() {
 
 app.whenReady().then(() => {
   loadTaskBinding()
+  codexAdapter.setWindowsControlEnabled(loadWindowsControlEnabled())
+  codexAdapter.startWindowsMonitoring(handleWindowsControlEvent)
   registerAppProtocol()
   registerIpc()
   createWidgetWindow()
-  void codexTasks.ensureStarted().catch((error) => {
+  desktopAutoUpdater.start()
+  void codexAdapter.ensureStarted().catch((error) => {
     console.warn('Codex App Server preflight failed:', error)
   })
 })
 
 app.on('window-all-closed', () => app.quit())
-app.on('before-quit', () => codexTasks.close())
+app.on('before-quit', () => {
+  desktopAutoUpdater.close()
+  codexAdapter.close()
+})

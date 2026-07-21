@@ -16,22 +16,25 @@ $shortcuts = @{
   search_tasks = '^g'
 }
 
-$target = Get-Process | Where-Object {
-  $_.MainWindowHandle -ne 0 -and (
-    $_.ProcessName -eq 'Codex' -or
-    ($_.ProcessName -eq 'ChatGPT' -and $_.MainWindowTitle -match '(?i)\bCodex\b')
-  )
-} | Sort-Object StartTime -Descending | Select-Object -First 1
+if (-not $PSScriptRoot) { exit 6 }
+. (Join-Path $PSScriptRoot 'codex-window-policy.ps1')
+$targetIdentity = Get-CodexTargetIdentity
 
-if (-not $target) {
-  exit 2
-}
+if (-not $targetIdentity) { exit 2 }
+$target = $targetIdentity.process
+$identity = $targetIdentity.identity
+if (-not $identity.verified) { exit 5 }
 
 if ($DryRun) {
   [pscustomobject]@{
     processId = $target.Id
     processName = $target.ProcessName
     windowTitle = $target.MainWindowTitle
+    identityVerified = $identity.verified
+    identityType = $identity.type
+    packageName = $identity.packageName
+    packageFamily = $identity.packageFamily
+    publisher = $identity.publisher
   } | ConvertTo-Json -Compress
   exit 0
 }
@@ -67,4 +70,14 @@ if ($foregroundProcessId -ne [uint32]$target.Id) {
 }
 
 $automation.SendKeys($shortcuts[$Action])
+[pscustomobject]@{
+  ok = $true
+  action = $Action
+  backend = 'verified-shortcut'
+  processId = $target.Id
+  processName = $target.ProcessName
+  identityVerified = $identity.verified
+  identityType = $identity.type
+  packageName = $identity.packageName
+} | ConvertTo-Json -Compress
 exit 0

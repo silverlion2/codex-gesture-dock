@@ -11,8 +11,15 @@ contextBridge.exposeInMainWorld('widgetControls', {
     ipcRenderer.invoke('task-picker:send-gesture', gesture),
   showMessage: (message) => ipcRenderer.invoke('widget:show-message', message),
   runCodexAction: (action) => ipcRenderer.invoke('codex:run-action', action),
+  runWindowsAction: (action) => ipcRenderer.invoke('windows:run-action', action),
+  getUpdateStatus: () => ipcRenderer.invoke('updates:get-status'),
+  checkForUpdates: () => ipcRenderer.invoke('updates:check'),
+  installUpdate: () => ipcRenderer.invoke('updates:install'),
   getCodexIntegrationStatus: () =>
     ipcRenderer.invoke('codex:get-integration-status'),
+  inspectCodexUi: () => ipcRenderer.invoke('windows:inspect-codex-ui'),
+  setWindowsControlEnabled: (enabled) =>
+    ipcRenderer.invoke('windows:set-control-enabled', enabled),
   bindCodexTask: (threadId) => ipcRenderer.invoke('codex:bind-task', threadId),
   listCodexTasks: (filter) => ipcRenderer.invoke('codex:list-tasks', filter),
   listRecentCodexFiles: () => ipcRenderer.invoke('codex:list-recent-files'),
@@ -43,6 +50,16 @@ contextBridge.exposeInMainWorld('widgetControls', {
     const listener = () => callback()
     ipcRenderer.on('codex:integration-changed', listener)
     return () => ipcRenderer.removeListener('codex:integration-changed', listener)
+  },
+  onWindowsControlEvent: (callback) => {
+    const listener = (_event, windowsEvent) => callback(windowsEvent)
+    ipcRenderer.on('windows:control-event', listener)
+    return () => ipcRenderer.removeListener('windows:control-event', listener)
+  },
+  onUpdateStatus: (callback) => {
+    const listener = (_event, status) => callback(status)
+    ipcRenderer.on('updates:status', listener)
+    return () => ipcRenderer.removeListener('updates:status', listener)
   },
   onStateChange: (callback) => {
     const listener = (_event, expanded) => callback(Boolean(expanded))

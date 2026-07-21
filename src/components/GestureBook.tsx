@@ -1,11 +1,16 @@
 import { Hand, Mic, Radio } from 'lucide-react'
 import type { GestureViewState } from '../hooks/useGestureControl'
-import { GESTURE_BINDINGS, type GestureName } from '../lib/gestures'
+import {
+  getGestureBindings,
+  type GestureMode,
+  type GestureName,
+} from '../lib/gestures'
 
 interface GestureBookProps {
   enabled: boolean
   gesture: GestureViewState
   microphoneActive?: boolean
+  mode?: GestureMode
 }
 
 function liveLabel(
@@ -26,15 +31,18 @@ export function GestureBook({
   enabled,
   gesture,
   microphoneActive = false,
+  mode = 'codex',
 }: GestureBookProps) {
+  const bindings = getGestureBindings(mode)
+  const codexMicrophoneActive = mode === 'codex' && microphoneActive
   return (
     <section className={`gesture-book ${enabled ? 'is-enabled' : 'is-disabled'}`}>
       <header className="gesture-book-header">
         <div>
           <span>GESTURE BOOK · 06</span>
-          <strong>Codex 全手势手册</strong>
+          <strong>{mode === 'windows' ? 'Windows 全手势手册' : 'Codex 全手势手册'}</strong>
         </div>
-        {microphoneActive ? (
+        {codexMicrophoneActive ? (
           <Mic className="gesture-mic-active" size={19} aria-hidden="true" />
         ) : (
           <Hand size={19} aria-hidden="true" />
@@ -43,14 +51,14 @@ export function GestureBook({
 
       <div className="gesture-book-live" aria-live="polite">
         <Radio size={14} aria-hidden="true" />
-        <span>{liveLabel(enabled, gesture, microphoneActive)}</span>
+        <span>{liveLabel(enabled, gesture, codexMicrophoneActive)}</span>
         <i aria-hidden="true">
           <b style={{ width: `${gesture.progress * 100}%` }} />
         </i>
       </div>
 
       <div className="gesture-book-grid">
-        {(Object.entries(GESTURE_BINDINGS) as [GestureName, (typeof GESTURE_BINDINGS)[GestureName]][]).map(
+        {(Object.entries(bindings) as [GestureName, (typeof bindings)[GestureName]][]).map(
           ([name, binding], index) => (
             <article
               className={gesture.gesture === name || gesture.binding === binding ? 'is-active' : ''}

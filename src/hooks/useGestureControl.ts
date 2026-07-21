@@ -11,10 +11,10 @@ import {
 } from 'react'
 import {
   advanceGestureMachine,
-  GESTURE_BINDINGS,
+  CODEX_GESTURE_BINDINGS,
   initialGestureMachineState,
-  type CodexAction,
-  type CodexActionResult,
+  type GestureAction,
+  type GestureActionResult,
   type GestureBinding,
   type GestureName,
 } from '../lib/gestures'
@@ -33,8 +33,9 @@ export interface GestureViewState {
 
 interface UseGestureControlOptions {
   active: boolean
+  bindings: Record<GestureName, GestureBinding>
   enabled: boolean
-  onAction: (action: CodexAction) => Promise<CodexActionResult>
+  onAction: (action: GestureAction) => Promise<GestureActionResult>
   onGesture?: (gesture: GestureName) => boolean
   videoRef: RefObject<HTMLVideoElement | null>
 }
@@ -53,6 +54,7 @@ const idleView: GestureViewState = {
 
 export function useGestureControl({
   active,
+  bindings,
   enabled,
   onAction,
   onGesture,
@@ -87,7 +89,7 @@ export function useGestureControl({
         minTrackingConfidence: 0.55,
         cannedGesturesClassifierOptions: {
           scoreThreshold: 0.68,
-          categoryAllowlist: Object.keys(GESTURE_BINDINGS),
+          categoryAllowlist: Object.keys(CODEX_GESTURE_BINDINGS),
         },
       })
       recognizerRef.current = recognizer
@@ -138,7 +140,7 @@ export function useGestureControl({
               name: category?.categoryName ?? null,
               confidence: category?.score ?? 0,
               now,
-            })
+            }, bindings)
             machineRef.current = machineResult.state
 
             setView({
@@ -184,7 +186,7 @@ export function useGestureControl({
       frameRef.current = null
       machineRef.current = { ...initialGestureMachineState }
     }
-  }, [active, enabled, loadRecognizer, onAction, onGesture, videoRef])
+  }, [active, bindings, enabled, loadRecognizer, onAction, onGesture, videoRef])
 
   useEffect(
     () => () => {

@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  windows-portable:
+  windows-release:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,22 +26,34 @@ jobs:
       - run: npm test
       - run: npm run lint
       - run: npm run dist:win
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
       - name: Generate SHA-256 checksum
         shell: pwsh
         run: |
-          $artifact = Get-ChildItem artifacts -Filter "Codex-Gesture-Dock-*-portable.exe" | Select-Object -First 1
-          if (-not $artifact) { throw "Portable executable was not generated." }
-          $hash = (Get-FileHash -Algorithm SHA256 $artifact.FullName).Hash.ToLowerInvariant()
-          "$hash  $($artifact.Name)" | Set-Content artifacts/SHA256SUMS.txt -Encoding ascii
+          $artifacts = Get-ChildItem artifacts -File | Where-Object {
+            $_.Name -match '\.(exe|blockmap)$' -or $_.Name -eq 'latest.yml'
+          }
+          if (-not ($artifacts.Name -match '-setup\.exe$')) { throw "NSIS installer was not generated." }
+          if (-not ($artifacts.Name -match '-portable\.exe$')) { throw "Portable executable was not generated." }
+          if (-not ($artifacts.Name -contains 'latest.yml')) { throw "Updater metadata was not generated." }
+          $lines = foreach ($artifact in $artifacts) {
+            $hash = (Get-FileHash -Algorithm SHA256 $artifact.FullName).Hash.ToLowerInvariant()
+            "$hash  $($artifact.Name)"
+          }
+          $lines | Set-Content artifacts/SHA256SUMS.txt -Encoding ascii
       - name: Publish GitHub Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = "${{ github.ref_name }}"
-          $artifact = Get-ChildItem artifacts -Filter "Codex-Gesture-Dock-*-portable.exe" | Select-Object -First 1
+          $artifacts = Get-ChildItem artifacts -File | Where-Object {
+            $_.Name -match '\.(exe|blockmap)$' -or $_.Name -eq 'latest.yml' -or $_.Name -eq 'SHA256SUMS.txt'
+          }
           if (gh release view $tag 2>$null) {
-            gh release upload $tag $artifact.FullName artifacts/SHA256SUMS.txt --clobber
+            gh release upload $tag $artifacts.FullName --clobber
           } else {
-            gh release create $tag $artifact.FullName artifacts/SHA256SUMS.txt --verify-tag --generate-notes --title "Codex Gesture Dock $tag"
+            gh release create $tag $artifacts.FullName --verify-tag --generate-notes --title "Codex Gesture Dock $tag"
           }

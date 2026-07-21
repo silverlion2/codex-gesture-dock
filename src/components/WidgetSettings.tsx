@@ -1,14 +1,19 @@
 import { Bell, Coffee, Hand } from 'lucide-react'
 import type { ReminderSettings } from '../hooks/usePoseMonitor'
+import type { GestureMode } from '../lib/gestures'
 
 interface WidgetSettingsProps {
   settings: ReminderSettings
+  gestureMode: GestureMode
   onChange: (settings: ReminderSettings) => void
+  onGestureModeChange: (mode: GestureMode) => void
 }
 
 export function WidgetSettings({
   settings,
+  gestureMode,
   onChange,
+  onGestureModeChange,
 }: WidgetSettingsProps) {
   return (
     <section className="widget-settings" aria-label="提醒设置">
@@ -82,20 +87,32 @@ export function WidgetSettings({
 
       <div className="widget-setting-row">
         <Hand size={18} aria-hidden="true" />
-        <span>Codex 手势</span>
+        <span>{gestureMode === 'windows' ? 'Windows 手势' : 'Codex 手势'}</span>
         <button
           className={`mini-toggle ${settings.gestureEnabled ? 'is-on' : ''}`}
           type="button"
           role="switch"
           aria-checked={settings.gestureEnabled}
-          aria-label="Codex 手势控制"
+          aria-label={`${gestureMode === 'windows' ? 'Windows' : 'Codex'} 手势控制`}
           onClick={() =>
             onChange({ ...settings, gestureEnabled: !settings.gestureEnabled })
           }
         >
           <i />
         </button>
-        <span className="setting-state">手册常驻</span>
+        <label>
+          <span className="sr-only">手势控制模式</span>
+          <select
+            value={gestureMode}
+            aria-label="手势控制模式"
+            onChange={(event) =>
+              onGestureModeChange(event.target.value as GestureMode)
+            }
+          >
+            <option value="codex">Codex</option>
+            <option value="windows">Windows</option>
+          </select>
+        </label>
       </div>
     </section>
   )

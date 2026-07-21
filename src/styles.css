@@ -1808,6 +1808,50 @@ select:focus-visible {
   white-space: nowrap;
 }
 
+.windows-control-toggle {
+  min-height: 22px;
+  border: 1px solid #cfd9d1;
+  border-radius: 7px;
+  background: #eef5f0;
+  color: #315c40;
+  font-size: 8px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.windows-control-toggle.is-paused {
+  border-color: #dfc8a4;
+  background: #fff4df;
+  color: #855916;
+}
+
+.windows-control-toggle:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.app-update-action {
+  min-height: 22px;
+  border: 1px solid #cfd8e8;
+  border-radius: 7px;
+  background: #edf4ff;
+  color: #31557c;
+  font-size: 8px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.app-update-action.is-downloaded {
+  border-color: #a8d6b8;
+  background: #eaf8ef;
+  color: #17683a;
+}
+
+.app-update-action:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
 .session-console header span {
   color: #718078;
   font-size: 8px;

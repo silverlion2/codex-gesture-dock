@@ -4,6 +4,7 @@ import {
   GESTURE_HOLD_MS,
   GESTURE_RELEASE_MS,
   initialGestureMachineState,
+  WINDOWS_GESTURE_BINDINGS,
 } from './gestures'
 
 describe('gesture confirmation state machine', () => {
@@ -66,6 +67,22 @@ describe('gesture confirmation state machine', () => {
 
     expect(confirmed.action).toBe('dictation')
     expect(confirmed.binding?.actionLabel).toBe('激活 Codex 话筒')
+  })
+
+  it('uses the independent Windows mapping when that mode is active', () => {
+    const started = advanceGestureMachine(
+      initialGestureMachineState,
+      { name: 'Open_Palm', confidence: 0.94, now: 0 },
+      WINDOWS_GESTURE_BINDINGS,
+    )
+    const confirmed = advanceGestureMachine(
+      started.state,
+      { name: 'Open_Palm', confidence: 0.94, now: GESTURE_HOLD_MS },
+      WINDOWS_GESTURE_BINDINGS,
+    )
+
+    expect(confirmed.action).toBe('show_desktop')
+    expect(confirmed.binding?.actionLabel).toBe('显示桌面')
   })
 
   it('rearms only after a neutral release window', () => {
