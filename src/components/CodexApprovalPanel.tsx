@@ -26,7 +26,7 @@ export function CodexApprovalPanel({
 
   return (
     <section
-      className="task-picker codex-approval-panel"
+      className="codex-approval-panel"
       aria-label="Codex 操作审批"
       aria-live="assertive"
     >
@@ -38,16 +38,17 @@ export function CodexApprovalPanel({
       </header>
 
       <div className="codex-approval-content">
-        <span className="task-confirm-icon" aria-hidden="true">
-          <RequestIcon size={27} />
-        </span>
-        <strong>{request.title}</strong>
-        <p>请检查本次具体操作，再决定是否只允许这一次。</p>
+        <div className="approval-summary">
+          <span className="task-confirm-icon" aria-hidden="true">
+            <RequestIcon size={21} />
+          </span>
+          <div>
+            <strong>{request.title}</strong>
+            <p>检查具体操作后，仅决定本次权限。</p>
+          </div>
+        </div>
         <code>{request.detail}</code>
         {request.context && <small>{request.context}</small>}
-        {request.reason && request.reason !== request.detail && (
-          <small>{request.reason}</small>
-        )}
 
         <div className="codex-approval-actions">
           <button

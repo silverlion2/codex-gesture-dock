@@ -1,4 +1,5 @@
 const fs = require('node:fs')
+const crypto = require('node:crypto')
 const os = require('node:os')
 const path = require('node:path')
 const readline = require('node:readline')
@@ -8,6 +9,8 @@ const { version: APP_VERSION } = require('../package.json')
 const REQUEST_TIMEOUT_MS = 12_000
 const TASK_PAGE_SIZE = 12
 const MAX_COMPLETED_SCAN_PAGES = 10
+const RECENT_FILE_TASK_LIMIT = 8
+const RECENT_FILE_TURN_LIMIT = 8
 
 const ACTION_PROMPTS = {
   continue:
@@ -20,14 +23,40 @@ const ACTION_PROMPTS = {
     '请检查当前任务状态，运行相关测试并修复失败；在执行危险或不可逆操作前先向我确认。',
 }
 
-function resolveCodexCommand() {
-  const candidates = [
-    process.env.CODEX_CLI_PATH,
-    process.env.LOCALAPPDATA &&
-      path.join(process.env.LOCALAPPDATA, 'OpenAI', 'Codex', 'bin', 'codex.exe'),
-  ].filter(Boolean)
+function resolveCodexCommand({
+  explicitPath = process.env.CODEX_CLI_PATH,
+  localAppData = process.env.LOCALAPPDATA,
+} = {}) {
+  if (explicitPath && fs.existsSync(explicitPath)) return explicitPath
 
-  return candidates.find((candidate) => fs.existsSync(candidate)) || 'codex'
+  const binRoot = localAppData
+    ? path.join(localAppData, 'OpenAI', 'Codex', 'bin')
+    : ''
+  const versionedCandidates = []
+
+  if (binRoot && fs.existsSync(binRoot)) {
+    try {
+      for (const entry of fs.readdirSync(binRoot, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue
+        const candidate = path.join(binRoot, entry.name, 'codex.exe')
+        if (!fs.existsSync(candidate)) continue
+        versionedCandidates.push({
+          command: candidate,
+          modifiedAt: fs.statSync(candidate).mtimeMs,
+        })
+      }
+    } catch {
+      // Fall through to the stable path/PATH lookup below.
+    }
+  }
+
+  versionedCandidates.sort((left, right) => right.modifiedAt - left.modifiedAt)
+  if (versionedCandidates[0]) return versionedCandidates[0].command
+
+  const stableCandidate = binRoot ? path.join(binRoot, 'codex.exe') : ''
+  return stableCandidate && fs.existsSync(stableCandidate)
+    ? stableCandidate
+    : 'codex'
 }
 
 function sourceName(source) {
@@ -39,6 +68,7 @@ function sourceName(source) {
 function runtimeStatus(thread, archived, latestTurn) {
   if (archived) return 'archived'
   if (thread.status?.type === 'active') return 'active'
+  if (latestTurn?.status === 'inProgress') return 'active'
   if (latestTurn?.status === 'completed') return 'completed'
   if (latestTurn?.status === 'failed') return 'failed'
   if (latestTurn?.status === 'interrupted') return 'interrupted'
@@ -53,8 +83,28 @@ function cleanTitle(thread) {
   return candidate.length > 64 ? `${candidate.slice(0, 63)}…` : candidate
 }
 
+function recentFileId(threadId, turnId, absolutePath) {
+  return crypto
+    .createHash('sha256')
+    .update(`${threadId}\0${turnId}\0${absolutePath.toLowerCase()}`)
+    .digest('hex')
+    .slice(0, 32)
+}
+
+function displayFilePath(cwd, absolutePath) {
+  const relativePath = path.relative(cwd, absolutePath)
+  if (
+    relativePath &&
+    !relativePath.startsWith('..') &&
+    !path.isAbsolute(relativePath)
+  ) {
+    return relativePath
+  }
+  return absolutePath
+}
+
 class CodexAppServerClient {
-  constructor({ onServerRequest, onServerRequestsCleared } = {}) {
+  constructor({ onNotification, onServerRequest, onServerRequestsCleared } = {}) {
     this.process = null
     this.reader = null
     this.nextId = 1
@@ -62,6 +112,17 @@ class CodexAppServerClient {
     this.serverRequests = new Map()
     this.startPromise = null
     this.lastError = ''
+    this.runtimeInfo = {
+      connected: false,
+      command: '',
+      userAgent: '',
+      codexHome: '',
+      platformFamily: '',
+      platformOs: '',
+      lastError: '',
+    }
+    this.onNotification =
+      typeof onNotification === 'function' ? onNotification : null
     this.onServerRequest =
       typeof onServerRequest === 'function' ? onServerRequest : null
     this.onServerRequestsCleared =
@@ -77,6 +138,12 @@ class CodexAppServerClient {
     this.startPromise = new Promise((resolve, reject) => {
       const command = resolveCodexCommand()
       this.lastError = ''
+      this.runtimeInfo = {
+        ...this.runtimeInfo,
+        connected: false,
+        command,
+        lastError: '',
+      }
       const child = spawn(command, ['app-server'], {
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
@@ -85,6 +152,11 @@ class CodexAppServerClient {
 
       child.once('error', (error) => {
         this.lastError = error.message
+        this.runtimeInfo = {
+          ...this.runtimeInfo,
+          connected: false,
+          lastError: error.message,
+        }
         this.failAll(error)
         if (this.process === child) this.process = null
         this.reader?.close()
@@ -97,6 +169,11 @@ class CodexAppServerClient {
           this.lastError || `Codex App Server 已退出（${code ?? 'unknown'}）`,
         )
         this.failAll(error)
+        this.runtimeInfo = {
+          ...this.runtimeInfo,
+          connected: false,
+          lastError: error.message,
+        }
         if (this.process === child) this.process = null
         this.reader?.close()
         this.reader = null
@@ -128,7 +205,16 @@ class CodexAppServerClient {
           ],
         },
       })
-        .then(() => {
+        .then((result) => {
+          this.runtimeInfo = {
+            connected: true,
+            command,
+            userAgent: String(result?.userAgent || ''),
+            codexHome: String(result?.codexHome || ''),
+            platformFamily: String(result?.platformFamily || ''),
+            platformOs: String(result?.platformOs || ''),
+            lastError: '',
+          }
           this.notify('initialized', {})
           resolve()
         })
@@ -154,7 +240,15 @@ class CodexAppServerClient {
       return
     }
 
-    if (message.id === undefined || message.id === null) return
+    if (message.id === undefined || message.id === null) {
+      if (typeof message.method === 'string') {
+        this.onNotification?.({
+          method: message.method,
+          params: message.params ?? {},
+        })
+      }
+      return
+    }
     const requestId = String(message.id)
     const pending = this.pending.get(requestId)
     if (!pending) {
@@ -242,6 +336,13 @@ class CodexAppServerClient {
     return this.requestRaw(method, params)
   }
 
+  getRuntimeInfo() {
+    return {
+      ...this.runtimeInfo,
+      lastError: this.lastError || this.runtimeInfo.lastError,
+    }
+  }
+
   async latestTurn(threadId) {
     try {
       const response = await this.request('thread/turns/list', {
@@ -304,6 +405,89 @@ class CodexAppServerClient {
     return tasks.slice(0, TASK_PAGE_SIZE)
   }
 
+  async listRecentFiles() {
+    const tasks = (await this.listTasks('recent')).slice(0, RECENT_FILE_TASK_LIMIT)
+    const taskFiles = await Promise.all(
+      tasks.map(async (task) => {
+        try {
+          const response = await this.request('thread/turns/list', {
+            threadId: task.id,
+            limit: RECENT_FILE_TURN_LIMIT,
+            sortDirection: 'desc',
+            itemsView: 'full',
+          })
+          const turns = Array.isArray(response?.data) ? response.data : []
+          const files = []
+
+          for (const turn of turns) {
+            if (turn?.status !== 'completed') continue
+            const completedAt = Number(turn.completedAt || task.updatedAt || 0)
+            const items = Array.isArray(turn.items) ? turn.items : []
+
+            for (const item of items) {
+              if (item?.type === 'fileChange' && Array.isArray(item.changes)) {
+                for (const change of item.changes) {
+                  const rawPath = String(change?.path || '').trim()
+                  if (!rawPath) continue
+                  const absolutePath = path.isAbsolute(rawPath)
+                    ? path.normalize(rawPath)
+                    : path.resolve(task.cwd, rawPath)
+                  const kind = ['add', 'delete', 'update'].includes(change?.kind?.type)
+                    ? change.kind.type
+                    : 'update'
+                  files.push({
+                    absolutePath,
+                    completedAt,
+                    exists: fs.existsSync(absolutePath),
+                    id: recentFileId(task.id, turn.id, absolutePath),
+                    kind,
+                    name: path.basename(absolutePath),
+                    project: task.project,
+                    relativePath: displayFilePath(task.cwd, absolutePath),
+                    taskId: task.id,
+                    taskTitle: task.title,
+                  })
+                }
+              }
+
+              if (item?.type === 'imageGeneration' && item.savedPath) {
+                const absolutePath = path.normalize(String(item.savedPath))
+                files.push({
+                  absolutePath,
+                  completedAt,
+                  exists: fs.existsSync(absolutePath),
+                  id: recentFileId(task.id, turn.id, absolutePath),
+                  kind: 'generated',
+                  name: path.basename(absolutePath),
+                  project: task.project,
+                  relativePath: displayFilePath(task.cwd, absolutePath),
+                  taskId: task.id,
+                  taskTitle: task.title,
+                })
+              }
+            }
+          }
+          return files
+        } catch {
+          return []
+        }
+      }),
+    )
+
+    const newestByPath = new Map()
+    for (const file of taskFiles.flat()) {
+      const key = file.absolutePath.toLowerCase()
+      const current = newestByPath.get(key)
+      if (!current || file.completedAt > current.completedAt) {
+        newestByPath.set(key, file)
+      }
+    }
+
+    return [...newestByPath.values()]
+      .sort((left, right) => right.completedAt - left.completedAt)
+      .slice(0, 40)
+  }
+
   async archiveTask(threadId) {
     await this.request('thread/archive', { threadId })
   }
@@ -347,10 +531,12 @@ class CodexAppServerClient {
     this.reader = null
     if (this.process && !this.process.killed) this.process.kill()
     this.process = null
+    this.runtimeInfo = { ...this.runtimeInfo, connected: false }
   }
 }
 
 module.exports = {
   ACTION_PROMPTS,
   CodexAppServerClient,
+  resolveCodexCommand,
 }

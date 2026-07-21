@@ -4,12 +4,10 @@ import {
   CheckCircle2,
   Hand,
   RotateCcw,
-  X,
 } from 'lucide-react'
 import type { RefObject } from 'react'
 import type { GestureViewState } from '../hooks/useGestureControl'
 import type { MonitorPhase } from '../hooks/usePoseMonitor'
-import { GESTURE_BINDINGS } from '../lib/gestures'
 import { statusLabel, type PostureStatus } from '../lib/posture'
 
 interface CompactCameraProps {
@@ -21,8 +19,6 @@ interface CompactCameraProps {
   calibrationProgress: number
   gesture: GestureViewState
   gestureEnabled: boolean
-  showGestureGuide: boolean
-  onCloseGestureGuide: () => void
   onRecalibrate: () => void
 }
 
@@ -35,8 +31,6 @@ export function CompactCamera({
   calibrationProgress,
   gesture,
   gestureEnabled,
-  showGestureGuide,
-  onCloseGestureGuide,
   onRecalibrate,
 }: CompactCameraProps) {
   return (
@@ -102,7 +96,7 @@ export function CompactCamera({
         </>
       )}
 
-      {gestureEnabled && phase === 'monitoring' && !showGestureGuide && (
+      {gestureEnabled && phase === 'monitoring' && (
         <div
           className={`gesture-live ${gesture.binding ? 'has-gesture' : ''}`}
           aria-live="polite"
@@ -127,32 +121,6 @@ export function CompactCamera({
         </div>
       )}
 
-      {showGestureGuide && (
-        <div className="gesture-guide" role="dialog" aria-label="Codex 手势表">
-          <header>
-            <strong>Codex 核心手势</strong>
-            <button
-              type="button"
-              aria-label="关闭手势表"
-              onClick={onCloseGestureGuide}
-            >
-              <X size={16} aria-hidden="true" />
-            </button>
-          </header>
-          <div className="gesture-guide-grid">
-            {Object.entries(GESTURE_BINDINGS).map(([name, binding]) => (
-              <div key={name}>
-                <b aria-hidden="true">{binding.symbol}</b>
-                <span>
-                  <strong>{binding.actionLabel}</strong>
-                  <small>{binding.gestureLabel}</small>
-                </span>
-              </div>
-            ))}
-          </div>
-          <p>稳定保持 0.85 秒才会触发；松手后才能执行下一次。</p>
-        </div>
-      )}
     </section>
   )
 }

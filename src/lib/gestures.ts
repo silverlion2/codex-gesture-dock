@@ -37,7 +37,7 @@ export const GESTURE_BINDINGS: Record<GestureName, GestureBinding> = {
   },
   Pointing_Up: {
     action: 'dictation',
-    actionLabel: '开始语音输入',
+    actionLabel: '激活 Codex 话筒',
     gestureLabel: '食指向上',
     symbol: '☝',
   },

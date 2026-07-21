@@ -2,6 +2,22 @@
 
 All notable changes to Codex Gesture Dock are documented here.
 
+## [Unreleased]
+
+### Added
+
+- Live App Server thread, turn, and item event synchronization.
+- Persistent current-task binding with workspace-aware automatic selection.
+- App Server and Windows desktop connection diagnostics in the main panel.
+- A phased Windows UI Automation control design and security boundary.
+
+### Fixed
+
+- Prefer the newest versioned Codex Desktop runtime instead of an older stable
+  CLI path.
+- Deliver App Server notifications that were previously discarded because they
+  do not contain JSON-RPC response IDs.
+
 ## [0.4.0] - 2026-07-21
 
 ### Added

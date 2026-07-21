@@ -5,4 +5,6 @@ artifacts-*/
 release/
 releases/
 work/
+output/
+.playwright-cli/
 *.log

@@ -5,8 +5,19 @@ contextBridge.exposeInMainWorld('widgetControls', {
   getState: () => ipcRenderer.invoke('widget:get-state'),
   setExpanded: (expanded) => ipcRenderer.invoke('widget:set-expanded', expanded),
   close: () => ipcRenderer.invoke('widget:close'),
+  openTaskPicker: () => ipcRenderer.invoke('task-picker:open'),
+  closeTaskPicker: () => ipcRenderer.invoke('task-picker:close'),
+  sendTaskPickerGesture: (gesture) =>
+    ipcRenderer.invoke('task-picker:send-gesture', gesture),
+  showMessage: (message) => ipcRenderer.invoke('widget:show-message', message),
   runCodexAction: (action) => ipcRenderer.invoke('codex:run-action', action),
+  getCodexIntegrationStatus: () =>
+    ipcRenderer.invoke('codex:get-integration-status'),
+  bindCodexTask: (threadId) => ipcRenderer.invoke('codex:bind-task', threadId),
   listCodexTasks: (filter) => ipcRenderer.invoke('codex:list-tasks', filter),
+  listRecentCodexFiles: () => ipcRenderer.invoke('codex:list-recent-files'),
+  openRecentCodexFile: (fileId, mode) =>
+    ipcRenderer.invoke('codex:open-recent-file', fileId, mode),
   runCodexTaskAction: (threadId, action) =>
     ipcRenderer.invoke('codex:run-task-action', threadId, action),
   getPendingCodexApprovals: () =>
@@ -23,9 +34,34 @@ contextBridge.exposeInMainWorld('widgetControls', {
     ipcRenderer.on('codex:approvals-cleared', listener)
     return () => ipcRenderer.removeListener('codex:approvals-cleared', listener)
   },
+  onCodexRuntimeEvent: (callback) => {
+    const listener = (_event, runtimeEvent) => callback(runtimeEvent)
+    ipcRenderer.on('codex:runtime-event', listener)
+    return () => ipcRenderer.removeListener('codex:runtime-event', listener)
+  },
+  onCodexIntegrationChanged: (callback) => {
+    const listener = () => callback()
+    ipcRenderer.on('codex:integration-changed', listener)
+    return () => ipcRenderer.removeListener('codex:integration-changed', listener)
+  },
   onStateChange: (callback) => {
     const listener = (_event, expanded) => callback(Boolean(expanded))
     ipcRenderer.on('widget:state-changed', listener)
     return () => ipcRenderer.removeListener('widget:state-changed', listener)
+  },
+  onTaskPickerStateChange: (callback) => {
+    const listener = (_event, open) => callback(Boolean(open))
+    ipcRenderer.on('task-picker:state-changed', listener)
+    return () => ipcRenderer.removeListener('task-picker:state-changed', listener)
+  },
+  onTaskPickerGesture: (callback) => {
+    const listener = (_event, gesture) => callback(gesture)
+    ipcRenderer.on('task-picker:gesture', listener)
+    return () => ipcRenderer.removeListener('task-picker:gesture', listener)
+  },
+  onMessage: (callback) => {
+    const listener = (_event, message) => callback(String(message))
+    ipcRenderer.on('widget:message', listener)
+    return () => ipcRenderer.removeListener('widget:message', listener)
   },
 })

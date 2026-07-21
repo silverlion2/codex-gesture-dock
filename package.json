@@ -17,6 +17,7 @@
     "build": "tsc -b && vite build",
     "desktop": "npm run build && electron .",
     "desktop:smoke": "npm run build && electron . --smoke-test",
+    "desktop:smoke:tasks": "npm run build && electron . --smoke-test-tasks",
     "dist:win": "npm run build && electron-builder --win portable --publish never",
     "lint": "eslint .",
     "preview": "vite preview --host 127.0.0.1",

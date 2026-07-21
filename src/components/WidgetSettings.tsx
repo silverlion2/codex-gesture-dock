@@ -4,13 +4,11 @@ import type { ReminderSettings } from '../hooks/usePoseMonitor'
 interface WidgetSettingsProps {
   settings: ReminderSettings
   onChange: (settings: ReminderSettings) => void
-  onOpenGestureGuide: () => void
 }
 
 export function WidgetSettings({
   settings,
   onChange,
-  onOpenGestureGuide,
 }: WidgetSettingsProps) {
   return (
     <section className="widget-settings" aria-label="提醒设置">
@@ -97,13 +95,7 @@ export function WidgetSettings({
         >
           <i />
         </button>
-        <button
-          className="gesture-guide-button"
-          type="button"
-          onClick={onOpenGestureGuide}
-        >
-          手势表
-        </button>
+        <span className="setting-state">手册常驻</span>
       </div>
     </section>
   )

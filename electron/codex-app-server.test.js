@@ -1,8 +1,20 @@
 import { createRequire } from 'node:module'
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
-const { CodexAppServerClient } = require('./codex-app-server.cjs')
+const {
+  CodexAppServerClient,
+  resolveCodexCommand,
+} = require('./codex-app-server.cjs')
 
 function thread(id, updatedAt) {
   return {
@@ -17,6 +29,27 @@ function thread(id, updatedAt) {
 }
 
 describe('Codex App Server client', () => {
+  it('prefers the newest versioned Codex Desktop runtime', () => {
+    const localAppData = mkdtempSync(path.join(tmpdir(), 'codex-runtime-'))
+    const binRoot = path.join(localAppData, 'OpenAI', 'Codex', 'bin')
+    const stable = path.join(binRoot, 'codex.exe')
+    const older = path.join(binRoot, 'older', 'codex.exe')
+    const newest = path.join(binRoot, 'newest', 'codex.exe')
+
+    try {
+      for (const candidate of [stable, older, newest]) {
+        mkdirSync(path.dirname(candidate), { recursive: true })
+        writeFileSync(candidate, '')
+      }
+      utimesSync(older, new Date(1000), new Date(1000))
+      utimesSync(newest, new Date(2000), new Date(2000))
+
+      expect(resolveCodexCommand({ localAppData })).toBe(newest)
+    } finally {
+      rmSync(localAppData, { recursive: true, force: true })
+    }
+  })
+
   it('scans repaired thread history and paginates completed tasks', async () => {
     const client = new CodexAppServerClient()
     const pages = [
@@ -72,6 +105,50 @@ describe('Codex App Server client', () => {
     })
   })
 
+  it('delivers App Server notifications without treating them as responses', () => {
+    const onNotification = vi.fn()
+    const client = new CodexAppServerClient({ onNotification })
+
+    client.handleLine(
+      JSON.stringify({
+        method: 'turn/completed',
+        params: {
+          threadId: 'thread-1',
+          turn: { id: 'turn-1', status: 'completed' },
+        },
+      }),
+    )
+
+    expect(onNotification).toHaveBeenCalledWith({
+      method: 'turn/completed',
+      params: {
+        threadId: 'thread-1',
+        turn: { id: 'turn-1', status: 'completed' },
+      },
+    })
+  })
+
+  it('returns a defensive copy of runtime connection details', () => {
+    const client = new CodexAppServerClient()
+    client.runtimeInfo = {
+      connected: true,
+      command: 'codex.exe',
+      userAgent: 'codex_cli_rs/0.145.0',
+      codexHome: 'C:\\Users\\tester\\.codex',
+      platformFamily: 'windows',
+      platformOs: 'windows',
+      lastError: '',
+    }
+
+    const first = client.getRuntimeInfo()
+    first.connected = false
+
+    expect(client.getRuntimeInfo()).toMatchObject({
+      connected: true,
+      userAgent: 'codex_cli_rs/0.145.0',
+    })
+  })
+
   it('steers an active turn instead of starting a conflicting turn', async () => {
     const client = new CodexAppServerClient()
     client.request = vi.fn(async (method) => {
@@ -103,5 +180,71 @@ describe('Codex App Server client', () => {
       'turn/start',
       expect.anything(),
     )
+  })
+
+  it('collects the newest changed files from completed turns', async () => {
+    const client = new CodexAppServerClient()
+    client.listTasks = vi.fn(async () => [
+      {
+        id: 'recent-thread',
+        cwd: 'D:\\workspace\\recent-project',
+        project: 'recent-project',
+        title: 'Recent task',
+        updatedAt: 200,
+      },
+    ])
+    client.request = vi.fn(async () => ({
+      data: [
+        {
+          id: 'new-turn',
+          status: 'completed',
+          completedAt: 200,
+          items: [
+            {
+              type: 'fileChange',
+              status: 'completed',
+              changes: [
+                {
+                  path: 'src\\updated.ts',
+                  kind: { type: 'update' },
+                  diff: '+new',
+                },
+              ],
+            },
+          ],
+        },
+        {
+          id: 'old-turn',
+          status: 'completed',
+          completedAt: 100,
+          items: [
+            {
+              type: 'fileChange',
+              status: 'completed',
+              changes: [
+                {
+                  path: 'src\\updated.ts',
+                  kind: { type: 'add' },
+                  diff: '+old',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    }))
+
+    const files = await client.listRecentFiles()
+
+    expect(files).toHaveLength(1)
+    expect(files[0]).toMatchObject({
+      completedAt: 200,
+      kind: 'update',
+      name: 'updated.ts',
+      project: 'recent-project',
+      relativePath: 'src\\updated.ts',
+      taskTitle: 'Recent task',
+    })
+    expect(files[0].id).toMatch(/^[a-f0-9]{32}$/)
   })
 })

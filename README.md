@@ -9,11 +9,14 @@
 ## Codex 控制系统
 
 - 78 × 78 像素无边框置顶悬浮按钮，可拖动位置
-- 点击展开 420 × 700 像素监测菜单，收起后继续保持会话
+- 点击展开 700 × 680 像素双栏监测台，首次展开会启动摄像头，收起后继续保持会话
 - 6 个 Codex 核心手势，控制快速对话、语音输入、任务选择、代码审查、终端和侧栏
-- Codex 任务选择器，可列出最近、已完成和已归档任务
+- 摄像头、实时识别状态和完整 6 项手势手册在主面板中始终可见
+- 文件与任务操作使用更宽的独立窗口；优先列出刚完成但尚未查看的文件，也可切换最近、已完成和已归档任务，不遮挡实时画面
 - 任务可打开、继续处理、只读总结、审查、测试修复或归档，执行前二次确认
 - 活跃任务使用 `turn/steer` 安全追加指令，避免与正在运行的回合冲突
+- 自动连接 Codex Desktop 最新版本化 App Server 运行时，绑定当前工作区任务并同步线程、回合和文件事件
+- 主面板显示 App Server、Windows 桌面窗口和当前绑定任务的双通道连接状态
 - Codex 请求执行命令或修改文件时，Dock 会自动展开并显示逐次审批；只提供“仅允许本次”和“拒绝”
 - 快捷键发送前锁定并复核真实 Codex 桌面进程，避免误操作标题中包含 ChatGPT/Codex 的浏览器窗口
 - 手势必须稳定保持 0.85 秒，松手后才能再次触发
@@ -30,17 +33,19 @@
 | 手势 | Codex 动作 | 官方快捷键 |
 | --- | --- | --- |
 | ✌ 胜利手势 | 打开快速对话 | `Ctrl + Alt + N` |
-| ☝ 食指向上 | 开始语音输入 | `Ctrl + Shift + D` |
+| ☝ 食指向上 | 激活 Codex 话筒 | `Ctrl + Shift + D` |
 | ✋ 张开手掌 | 打开任务选择器 | 本机 App Server |
 | 👍 竖起拇指 | 打开代码审查 | `Ctrl + Shift + G` |
 | 🤟 I Love You | 切换集成终端 | `Ctrl + 反引号` |
 | ✊ 握拳 | 切换任务侧栏 | `Ctrl + B` |
 
-任务选择器打开后，手势会进入上下文模式：☝ 选择上一项、✊ 选择下一项、👍 确认、✌ 返回、✋ 切换任务分类、🤟 刷新列表。任务操作必须在确认页再次 👍 才会执行。
+文件与任务窗口打开后，手势会进入上下文模式：☝ 选择上一项、✊ 选择下一项、👍 打开或确认、✌ 返回、✋ 从文件进入任务或切换任务分类、🤟 刷新列表。任务操作必须在确认页再次 👍 才会执行；文件打开后会在本机标记为已查看。
 
 当 Codex 发出命令或文件修改审批时，控制面板会切换到审批模式：👍 仅允许本次操作，✌ 拒绝。系统不会通过手势授予整次会话的持续权限。
 
 快捷键桥接只允许固定白名单，并会在发送快捷键前确认前台窗口确实属于 Codex。任务历史通过 Codex App Server 的 `thread/list` 与 `thread/turns/list` 读取；如果接口暂时不可用，可以回退到 Codex 自带的 `Ctrl + G` 历史搜索。
+
+App Server 深度对接与 Windows UI 控制是两条独立通道。当前语义任务控制使用 App Server，桌面 UI 动作仍使用经过前台进程复核的快捷键兼容桥；后续 Windows UI Automation 路线、安全边界和阶段计划见 [Windows 桌面控制设计](docs/windows-desktop-control.md)。
 
 ## 直接运行桌面版
 
@@ -55,7 +60,7 @@ npm run desktop
 npm run dev:desktop
 ```
 
-第一次点击“开始监测”时，Windows 会请求摄像头权限。应用只申请视频权限，不申请麦克风权限。
+第一次展开主面板或点击“开始监测”时，Windows 会请求摄像头权限。应用只申请视频权限，不申请麦克风权限。
 
 ## 构建 Windows 便携版
 
@@ -84,9 +89,10 @@ npm test
 npm run lint
 npm run build
 npm run desktop:smoke
+npm run desktop:smoke:tasks
 ```
 
-桌面冒烟测试会检查打包态页面加载、窗口置顶状态和折叠窗口尺寸，并把结果写入 `work/electron-smoke.json`。App Server 客户端测试覆盖任务分页、活跃回合控制和审批响应。
+桌面冒烟测试会检查打包态页面加载、窗口置顶状态和折叠窗口尺寸；多窗口测试还会确认摄像头区域、6 项手势手册和独立任务选择器同时存在。结果写入 `work/electron-smoke.json` 与 `work/electron-task-window-smoke.json`。App Server 客户端测试覆盖运行时发现、任务分页、实时事件、当前任务绑定、活跃回合控制和审批响应。
 
 ## 隐私与限制
 
@@ -106,6 +112,7 @@ npm run desktop:smoke
 - `docs/implementation-task-picker-list.png`：任务列表实装
 - `docs/implementation-task-picker-actions.png`：任务操作菜单实装
 - `docs/implementation-task-picker-confirm.png`：二次确认页实装
+- `docs/windows-desktop-control.md`：Windows 桌面控制边界与演进路线
 
 ## 第三方组件
 

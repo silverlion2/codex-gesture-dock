@@ -52,6 +52,22 @@ describe('gesture confirmation state machine', () => {
     expect(held.state.awaitingNeutral).toBe(true)
   })
 
+  it('activates Codex dictation after holding the pointing gesture', () => {
+    const started = advanceGestureMachine(initialGestureMachineState, {
+      name: 'Pointing_Up',
+      confidence: 0.94,
+      now: 0,
+    })
+    const confirmed = advanceGestureMachine(started.state, {
+      name: 'Pointing_Up',
+      confidence: 0.94,
+      now: GESTURE_HOLD_MS,
+    })
+
+    expect(confirmed.action).toBe('dictation')
+    expect(confirmed.binding?.actionLabel).toBe('激活 Codex 话筒')
+  })
+
   it('rearms only after a neutral release window', () => {
     const started = advanceGestureMachine(initialGestureMachineState, {
       name: 'Open_Palm',

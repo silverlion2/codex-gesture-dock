@@ -49,16 +49,37 @@ describe('TaskPicker', () => {
       getState: vi.fn(),
       setExpanded: vi.fn(),
       close: vi.fn(),
+      openTaskPicker: vi.fn(),
+      closeTaskPicker: vi.fn(),
+      sendTaskPickerGesture: vi.fn(),
+      showMessage: vi.fn(),
       runCodexAction: vi.fn(),
+      getCodexIntegrationStatus: vi.fn(),
+      bindCodexTask: vi.fn().mockResolvedValue({
+        ok: true,
+        taskId: 'recent-task',
+        message: '',
+      }),
       listCodexTasks: vi.fn((filter: CodexTaskFilter) =>
         filter === 'completed' ? completed.promise : recent.promise,
       ),
+      listRecentCodexFiles: vi.fn().mockResolvedValue({
+        ok: true,
+        files: [],
+        message: '',
+      }),
+      openRecentCodexFile: vi.fn(),
       runCodexTaskAction: vi.fn(),
       getPendingCodexApprovals: vi.fn(),
       respondCodexApproval: vi.fn(),
       onCodexApprovalRequest: vi.fn(),
       onCodexApprovalsCleared: vi.fn(),
+      onCodexRuntimeEvent: vi.fn(),
+      onCodexIntegrationChanged: vi.fn(),
       onStateChange: vi.fn(),
+      onTaskPickerStateChange: vi.fn(),
+      onTaskPickerGesture: vi.fn(),
+      onMessage: vi.fn(),
     }
 
     render(<TaskPicker open onClose={vi.fn()} onMessage={vi.fn()} />)

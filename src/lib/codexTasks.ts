@@ -37,6 +37,33 @@ export interface CodexTaskListResult {
   tasks: CodexTask[]
 }
 
+export type CodexRecentFileKind = 'add' | 'delete' | 'generated' | 'update'
+export type CodexRecentFileAction = 'open' | 'reveal'
+
+export interface CodexRecentFile {
+  completedAt: number
+  exists: boolean
+  id: string
+  kind: CodexRecentFileKind
+  name: string
+  project: string
+  relativePath: string
+  taskId: string
+  taskTitle: string
+}
+
+export interface CodexRecentFilesResult {
+  files: CodexRecentFile[]
+  message: string
+  ok: boolean
+}
+
+export interface CodexRecentFileActionResult {
+  fileId: string
+  message: string
+  ok: boolean
+}
+
 export interface CodexTaskActionResult {
   action: CodexTaskAction
   message: string
