@@ -1,0 +1,16 @@
+.git
+.vercel
+artifacts
+dist
+docs
+electron
+output
+releases
+work
+weekly report generator
+design-qa*.png
+design-qa.md
+public/ocr
+public/vision
+tests
+*.log

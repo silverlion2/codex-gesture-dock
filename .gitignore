@@ -10,3 +10,5 @@ output/
 *.log
 public/ocr/
 public/vision/
+
+.vercel
