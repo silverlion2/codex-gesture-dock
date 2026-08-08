@@ -32,4 +32,14 @@ More details are in the [Chinese user guide](user-guide-zh.md) and project [READ
 
 ## Release verification
 
-The release workflow must test and build on GitHub-hosted runners, submit only workflow artifacts for signing, verify the returned Authenticode publisher and timestamp, regenerate updater blockmaps and `latest.yml` after any post-build signing, and publish checksums for the final signed bytes. A signing failure must fail the release rather than silently publish unsigned replacement artifacts.
+The release workflow must test and build on GitHub-hosted runners, submit only workflow artifacts for signing, verify an exact configured Authenticode publisher subject and trusted timestamp certificate, regenerate updater blockmaps and `latest.yml` after any post-build signing, and publish checksums, an SBOM, and provenance for the final signed bytes. A signing failure must fail the release rather than silently publish unsigned replacement artifacts.
+
+The repository currently contains a fail-closed PFX integration using `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD`, and the non-secret expected subject variable `WIN_CSC_SUBJECT`. SignPath HSM approval does not produce a PFX and must not be emulated through those variables. If SignPath is approved, the release workflow must be changed to use the exact issued organization, project, signing-policy, artifact-configuration, and token integration before it is enabled.
+
+## Protected release refs
+
+The `main` branch and every `v*` release tag must be covered by active GitHub
+rules. The release workflow rejects a tag whose commit is not contained in
+`origin/main`, but repository rules remain the authoritative protection against
+an unreviewed tag changing or bypassing its own workflow. Commercial readiness
+must remain false when either the branch or candidate tag lacks matching rules.

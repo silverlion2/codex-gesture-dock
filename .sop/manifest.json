@@ -1,0 +1,17 @@
+{
+  "sopVersion": "1.0.0",
+  "adoptedAt": "2026-08-07T19:28:57.529Z",
+  "project": "codex-gesture-dock",
+  "profile": "vite",
+  "workspaceKind": "single",
+  "packageScriptsUpdated": true,
+  "generatedFiles": [
+    ".website-sop.yml",
+    "docs/product-spec.md",
+    "docs/architecture.md",
+    "docs/design-system.md",
+    "docs/test-matrix.md",
+    "docs/release-checklist.md",
+    "docs/workspace-layout.md"
+  ]
+}

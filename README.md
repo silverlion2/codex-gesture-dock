@@ -29,6 +29,8 @@
 - 4 秒个人坐姿校准、实时评分与骨架叠加
 - 本次时长、离席次数与最近坐姿趋势
 - 可调灵敏度的坐姿提醒和 30–60 分钟休息提醒
+- 摄像头工作区可切换到本机 QR/条码扫描或文档快照，并支持镜像/原图预览
+- 扫码结果只留在内存；文档先预览，只有点击“保存 PNG”才写入下载目录
 - 统计仅保存在本机 `localStorage`
 
 ## Codex 手势
@@ -88,11 +90,11 @@ npm run dev:desktop
 npm run dist:win
 ```
 
-产物会生成在 `artifacts/`，包括可自动更新的 NSIS `setup.exe`、portable 版、`latest.yml` 和差分更新 blockmap。自动更新只适用于安装版；旧 portable 用户需要先手动下载安装版。当前构建没有代码签名，首次安装及更新时 Windows SmartScreen 可能显示提示。
+产物会生成在 `artifacts/`，包括可自动更新的 NSIS `setup.exe`、portable 版、`latest.yml` 和差分更新 blockmap。自动更新只适用于安装版；旧 portable 用户需要先手动下载安装版。本机 `dist:win` 是开发构建，不具备官方签名。
 
 ## 发布版本
 
-每次推送 `v*` 标签时，GitHub Actions 会在干净的 Windows 环境中核对标签与包版本、运行测试和 lint，同时构建 NSIS 安装版与 portable 版，并发布 `latest.yml`、blockmap 和 `SHA256SUMS.txt`。安装版据此自动发现与下载新版本。发布前可先做无副作用检查：
+每次推送 `v*` 标签时，GitHub Actions 会在干净的 Windows 环境中核对标签与包版本、运行测试和 lint，构建并验证已签名的 NSIS 安装版与 portable 版。工作流还会检查 Electron Fuses、ASAR 合规文件、更新元数据、安装/升级/卸载和打包态界面，生成 CycloneDX SBOM、`SHA256SUMS.txt` 与 GitHub 构建来源证明，然后发布不可覆盖的 Release 资产。安装版据此自动发现与下载新版本。发布前可先做无副作用检查：
 
 ```powershell
 npm run release -- patch --dry-run
@@ -100,11 +102,13 @@ npm run release -- patch --dry-run
 
 确认后执行 `npm run release -- patch`（也可用 `minor`、`major` 或明确的 `x.y.z`）。脚本拒绝脏工作区、错误分支、落后远端、重复标签和版本降级，并在修改版本、提交、打标签或推送前要求输入精确确认文本。使用 `--no-push` 可只创建本地提交和标签。
 
-当前发行包尚未配置 Windows Authenticode 证书。更新器会核对 electron-builder 元数据中的 SHA-512，但它不能替代可信发布者签名；生产级可信更新仍需在 GitHub Actions 配置 `WIN_CSC_LINK` 与 `WIN_CSC_KEY_PASSWORD`。portable 版不会自动更新。
+当前已发布的 v0.5.0 安装包尚未配置 Windows Authenticode 证书。更新器会核对 electron-builder 元数据中的 SHA-512，但它不能替代可信发布者签名。新的生产 Release 已配置失败关闭：缺少 `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD`、未设置与证书完全一致的 `WIN_CSC_SUBJECT` 仓库变量，或 setup、portable、安装后主程序、卸载器任一签名无效、发布者不符、缺少可信时间戳时，工作流都会在上传前失败。portable 版不会自动更新。
 
 ### Code signing policy
 
-项目正在申请 SignPath Foundation 的开源项目 HSM 托管 Authenticode 签名。批准前发行包仍明确标记为未签名；批准后只有 GitHub 托管 Release Workflow 产生并经人工批准的项目二进制可以签名。角色、隐私、签名范围和失败关闭规则见 [Code signing policy](docs/code-signing-policy.md)。
+项目正在申请 SignPath Foundation 的开源项目 HSM 托管 Authenticode 签名。批准前不会再发布新的无签名生产版本；批准后只有 GitHub 托管 Release Workflow 产生并经人工批准的项目二进制可以签名。角色、隐私、签名范围和失败关闭规则见 [Code signing policy](docs/code-signing-policy.md)，本机数据与网络边界见 [Privacy Notice](PRIVACY.md)。
+
+已通过的本地证据、GitHub 自动门禁和仍会阻止商业发布的事项见 [Commercial release readiness](docs/commercial-release-readiness.md)。
 
 ## 验证
 
@@ -114,14 +118,26 @@ npm run lint
 npm run build
 npm run desktop:smoke
 npm run desktop:smoke:tasks
+npm run test:a11y
+npm run dist:win
+npm run verify:win-artifacts
+npm run desktop:smoke:packaged
+npm run sbom:generate
+npm run readiness:audit
 ```
 
-桌面冒烟测试会检查打包态页面加载、窗口置顶状态和折叠窗口尺寸；多窗口测试还会确认摄像头区域、6 项手势手册和独立任务选择器同时存在，并验证 Windows 控制暂停后动作被拒绝、恢复后状态正常。结果写入 `work/electron-smoke.json` 与 `work/electron-task-window-smoke.json`。自动测试还覆盖 App Server 运行时发现、任务分页、实时事件、当前任务绑定、活跃回合控制、审批响应、两层状态隔离、桌面动作白名单、实时窗口事件和 UI Automation 内容脱敏。
+桌面冒烟测试会检查打包态页面加载、窗口置顶状态和折叠窗口尺寸；多窗口测试还会确认摄像头区域、6 项手势手册和独立任务选择器同时存在，并验证 Windows 控制暂停后动作被拒绝、恢复后状态正常。结果写入 `work/electron-smoke.json` 与 `work/electron-task-window-smoke.json`。Chromium + axe 端到端门禁覆盖主面板、文件列表、任务筛选、操作选择、确认和 Escape 返回路径，并计算真实颜色对比度。自动测试还覆盖 App Server 运行时发现、任务分页、实时事件、当前任务绑定、活跃回合控制、审批响应、两层状态隔离、桌面动作白名单、实时窗口事件、UI Automation 内容脱敏和 renderer 崩溃限流策略。
+
+`install:smoke` 会真实修改当前用户的安装目录与卸载注册表，因此默认只允许在隔离的 Windows CI 运行；本机必须显式传入 `-AllowLocalMachineChanges`。CI 会下载并同时核对上一公开版本的 GitHub 资产摘要与 `SHA256SUMS.txt`，只有上一版本低于候选版本时才执行 N→N+1 覆盖升级。
+
+`readiness:audit` 是只读的商业发布审计：它只读取 Git/GitHub 配置名称、分支保护、候选版本、工作流结果和本机验证报告，不读取 Secret 值，也不修改远端。结果写入 `work/commercial-release-audit.json`；需要在自动化中遇到 blocker 即失败时，可直接运行脚本并加 `-FailOnBlockers`。
 
 ## 隐私与限制
 
+完整隐私说明见 [Privacy Notice](PRIVACY.md)。
+
 - 姿态、手势模型和 WebAssembly 文件都在 `public/`，推理不依赖云端服务。
-- 不保存图像、视频或人体关键点，只保存按天累计的良好坐姿秒数和有效检测秒数。
+- 默认不保存图像、视频或人体关键点；文档模式只有在用户拍摄并点击“保存 PNG”后才写入用户下载位置。应用只自动保存按天累计的良好坐姿秒数和有效检测秒数。
 - 任务标题、路径和状态只在悬浮面板中临时显示，不写入应用存储。
 - Windows 控制审计只记录时间、动作名、目标进程、结果和身份验证状态，不记录任务正文、按键内容、窗口文本或摄像头数据。
 - 安装版只向本项目公开的 GitHub Releases 检查更新，不允许界面传入自定义更新地址。

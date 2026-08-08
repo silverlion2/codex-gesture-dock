@@ -308,6 +308,19 @@ export const TaskPicker = forwardRef<TaskPickerHandle, TaskPickerProps>(
       })
     }, [filter, loadRecentFiles, loadTasks, open])
 
+    useEffect(() => {
+      if (!open) return
+      const handleEscape = (event: globalThis.KeyboardEvent) => {
+        if (event.defaultPrevented || event.key !== 'Escape') return
+        event.preventDefault()
+        if (stage === 'confirm') setStage('actions')
+        else if (stage === 'actions') setStage('list')
+        else onClose()
+      }
+      window.addEventListener('keydown', handleEscape)
+      return () => window.removeEventListener('keydown', handleEscape)
+    }, [onClose, open, stage])
+
     const chooseFilter = useCallback((nextFilter: CodexTaskFilter) => {
       setFilter(nextFilter)
     }, [])
@@ -478,6 +491,7 @@ export const TaskPicker = forwardRef<TaskPickerHandle, TaskPickerProps>(
               <button
                 className={workspaceView === 'files' ? 'is-active' : ''}
                 type="button"
+                aria-pressed={workspaceView === 'files'}
                 onClick={() => setWorkspaceView('files')}
               >
                 <Files size={14} aria-hidden="true" />
@@ -489,6 +503,7 @@ export const TaskPicker = forwardRef<TaskPickerHandle, TaskPickerProps>(
               <button
                 className={workspaceView === 'tasks' ? 'is-active' : ''}
                 type="button"
+                aria-pressed={workspaceView === 'tasks'}
                 onClick={() => setWorkspaceView('tasks')}
               >
                 <ClipboardCheck size={14} aria-hidden="true" />
@@ -502,6 +517,7 @@ export const TaskPicker = forwardRef<TaskPickerHandle, TaskPickerProps>(
                   <button
                     className={filter === item ? 'is-active' : ''}
                     type="button"
+                    aria-pressed={filter === item}
                     key={item}
                     onClick={() => chooseFilter(item)}
                   >
@@ -514,7 +530,7 @@ export const TaskPicker = forwardRef<TaskPickerHandle, TaskPickerProps>(
             {workspaceView === 'files' ? (
               <div className="task-list recent-file-list" aria-busy={filesLoading}>
                 {filesLoading && (
-                  <div className="task-empty">
+                  <div className="task-empty" role="status">
                     <LoaderCircle className="spin-icon" size={24} aria-hidden="true" />
                     <strong>正在读取刚完成的文件</strong>
                     <span>从本机 Codex 任务记录中整理</span>
@@ -522,7 +538,7 @@ export const TaskPicker = forwardRef<TaskPickerHandle, TaskPickerProps>(
                 )}
 
                 {!filesLoading && fileError && (
-                  <div className="task-empty task-empty-error">
+                  <div className="task-empty task-empty-error" role="alert">
                     <FileClock size={24} aria-hidden="true" />
                     <strong>暂时无法读取最近文件</strong>
                     <span>{fileError}</span>
@@ -530,7 +546,7 @@ export const TaskPicker = forwardRef<TaskPickerHandle, TaskPickerProps>(
                 )}
 
                 {!filesLoading && !fileError && recentFiles.length === 0 && (
-                  <div className="task-empty">
+                  <div className="task-empty" role="status">
                     <Eye size={24} aria-hidden="true" />
                     <strong>没有遗漏的文件</strong>
                     <span>最近完成的任务没有新文件，或文件都已经查看</span>
@@ -545,6 +561,7 @@ export const TaskPicker = forwardRef<TaskPickerHandle, TaskPickerProps>(
                     <button
                       className="recent-file-main"
                       type="button"
+                      aria-current={selectedFileIndex === index ? 'true' : undefined}
                       onClick={() => {
                         setSelectedFileIndex(index)
                         void openRecentFile(file)
@@ -572,7 +589,7 @@ export const TaskPicker = forwardRef<TaskPickerHandle, TaskPickerProps>(
             ) : (
               <div className="task-list" aria-busy={loading}>
                 {loading && (
-                  <div className="task-empty">
+                  <div className="task-empty" role="status">
                     <LoaderCircle className="spin-icon" size={24} aria-hidden="true" />
                     <strong>正在读取本机任务</strong>
                     <span>连接 Codex 历史记录</span>
@@ -580,7 +597,7 @@ export const TaskPicker = forwardRef<TaskPickerHandle, TaskPickerProps>(
                 )}
 
                 {!loading && error && (
-                  <div className="task-empty task-empty-error">
+                  <div className="task-empty task-empty-error" role="alert">
                     <Search size={24} aria-hidden="true" />
                     <strong>暂时无法读取任务</strong>
                     <span>{error}</span>
@@ -604,7 +621,7 @@ export const TaskPicker = forwardRef<TaskPickerHandle, TaskPickerProps>(
                 )}
 
                 {!loading && !error && tasks.length === 0 && (
-                  <div className="task-empty">
+                  <div className="task-empty" role="status">
                     <Archive size={24} aria-hidden="true" />
                     <strong>这里还没有任务</strong>
                     <span>切换上方分类，或刷新后重试</span>
@@ -617,6 +634,7 @@ export const TaskPicker = forwardRef<TaskPickerHandle, TaskPickerProps>(
                     <button
                       className={`task-row ${selectedIndex === index ? 'is-selected' : ''}`}
                       type="button"
+                      aria-current={selectedIndex === index ? 'true' : undefined}
                       key={task.id}
                       onClick={() => {
                         void bindTask(task)
@@ -659,7 +677,10 @@ export const TaskPicker = forwardRef<TaskPickerHandle, TaskPickerProps>(
         {stage === 'actions' && selectedTask && (
           <div className="task-action-view">
             <div className="selected-task-summary">
-              <span className={`task-status-dot status-${selectedTask.status}`} />
+              <span
+                className={`task-status-dot status-${selectedTask.status}`}
+                aria-hidden="true"
+              />
               <div>
                 <strong>{selectedTask.title}</strong>
                 <small>{selectedTask.project}</small>
@@ -670,6 +691,7 @@ export const TaskPicker = forwardRef<TaskPickerHandle, TaskPickerProps>(
                 <button
                   className={actionIndex === index ? 'is-selected' : ''}
                   type="button"
+                  aria-current={actionIndex === index ? 'true' : undefined}
                   key={option.action}
                   onClick={() => {
                     setActionIndex(index)

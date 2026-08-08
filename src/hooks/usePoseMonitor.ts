@@ -53,6 +53,7 @@ interface UsePoseMonitorOptions {
 const CALIBRATION_MS = 4_000
 const AWAY_GRACE_MS = 1_200
 const MAX_TREND_POINTS = 42
+const POSE_INFERENCE_INTERVAL_MS = 100
 
 const reminderDelay: Record<ReminderSettings['sensitivity'], number> = {
   gentle: 15_000,
@@ -91,6 +92,7 @@ export function usePoseMonitor({
   const landmarkerRef = useRef<PoseLandmarker | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const frameRef = useRef<number | null>(null)
+  const lastInferenceRef = useRef(Number.NEGATIVE_INFINITY)
   const lastVideoTimeRef = useRef(-1)
   const lastUiUpdateRef = useRef(0)
   const lastSeenRef = useRef(0)
@@ -246,32 +248,39 @@ export function usePoseMonitor({
   )
 
   const predict = useCallback(() => {
+    if (phaseRef.current === 'ended') return
+
+    // A camera can briefly have no current frame while it starts or recovers.
+    // Keep the loop alive so a transient readiness gap does not end monitoring.
+    frameRef.current = requestAnimationFrame(predict)
+
     const video = videoRef.current
     const landmarker = landmarkerRef.current
 
     if (
       !video ||
       !landmarker ||
-      video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
-      phaseRef.current === 'ended'
+      video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA
     ) {
       return
     }
 
-    if (video.currentTime !== lastVideoTimeRef.current) {
-      lastVideoTimeRef.current = video.currentTime
-      const now = performance.now()
-      const result = landmarker.detectForVideo(video, now)
-      const landmarks = result.landmarks[0] as Landmark[] | undefined
-      const features = landmarks ? extractPostureFeatures(landmarks) : null
+    const now = performance.now()
+    if (
+      video.currentTime === lastVideoTimeRef.current ||
+      now - lastInferenceRef.current < POSE_INFERENCE_INTERVAL_MS
+    ) return
 
-      if (landmarks) drawPose(landmarks, statusRef.current)
-      else clearCanvas()
+    lastVideoTimeRef.current = video.currentTime
+    lastInferenceRef.current = now
+    const result = landmarker.detectForVideo(video, now)
+    const landmarks = result.landmarks[0] as Landmark[] | undefined
+    const features = landmarks ? extractPostureFeatures(landmarks) : null
 
-      handleFeatures(features, now)
-    }
+    if (landmarks) drawPose(landmarks, statusRef.current)
+    else clearCanvas()
 
-    frameRef.current = requestAnimationFrame(predict)
+    handleFeatures(features, now)
   }, [clearCanvas, drawPose, handleFeatures, videoRef])
 
   const loadLandmarker = useCallback(async () => {
@@ -356,6 +365,8 @@ export function usePoseMonitor({
         if (video.srcObject === acquiredStream) video.srcObject = null
         return
       }
+      lastInferenceRef.current = Number.NEGATIVE_INFINITY
+      lastVideoTimeRef.current = -1
       resetCalibration()
       frameRef.current = requestAnimationFrame(predict)
     } catch (caught) {

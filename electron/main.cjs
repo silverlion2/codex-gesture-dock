@@ -11,10 +11,13 @@ const {
 } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs')
+const os = require('node:os')
 const { pathToFileURL } = require('node:url')
 const { CodexProgramAdapter } = require('./adapters/codex-adapter.cjs')
+const { APP_SERVER_CLOSED_CODE } = require('./codex-app-server.cjs')
 const { autoUpdater } = require('electron-updater')
 const { DesktopAutoUpdater } = require('./auto-update.cjs')
+const { createRecoveryLimiter } = require('./renderer-recovery.cjs')
 const {
   chooseBoundTask,
   normalizeCodexNotification,
@@ -34,15 +37,23 @@ protocol.registerSchemesAsPrivileged([
   },
 ])
 
-const COLLAPSED_SIZE = { width: 78, height: 78 }
+const COLLAPSED_SIZE = { width: 348, height: 360 }
 const EXPANDED_SIZE = { width: 700, height: 680 }
 const TASK_PICKER_SIZE = { width: 560, height: 680 }
 const SCREEN_GAP = 14
 const APP_HOST = 'codex-gesture-dock'
 const APP_URL_PREFIX = `app://${APP_HOST}/`
+const DEV_SERVER_ORIGIN = 'http://127.0.0.1:5173'
 const isSmokeTest = process.argv.includes('--smoke-test')
 const isTaskWindowSmokeTest = process.argv.includes('--smoke-test-tasks')
 const isAnySmokeTest = isSmokeTest || isTaskWindowSmokeTest
+if (isAnySmokeTest) {
+  app.setPath(
+    'userData',
+    fs.mkdtempSync(path.join(os.tmpdir(), 'codex-gesture-dock-smoke-')),
+  )
+}
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
 const smokeReportPath = path.join(
   process.cwd(),
   'work',
@@ -51,6 +62,7 @@ const smokeReportPath = path.join(
 
 let widgetWindow = null
 let taskPickerWindow = null
+let isQuitting = false
 let expanded = false
 let lastCodexActionAt = 0
 let lastWindowsActionAt = 0
@@ -93,6 +105,27 @@ const GESTURE_NAMES = new Set([
   'Victory',
   'ILoveYou',
 ])
+
+function isTrustedRendererUrl(value) {
+  if (value.startsWith(APP_URL_PREFIX)) return true
+  if (app.isPackaged) return false
+  try {
+    return new URL(value).origin === DEV_SERVER_ORIGIN
+  } catch {
+    return false
+  }
+}
+
+function getDevServerUrl() {
+  if (app.isPackaged || !process.env.ELECTRON_START_URL) return ''
+  try {
+    return new URL(process.env.ELECTRON_START_URL).origin === DEV_SERVER_ORIGIN
+      ? DEV_SERVER_ORIGIN
+      : ''
+  } catch {
+    return ''
+  }
+}
 const TASK_ACTIONS = new Set([
   'open',
   'continue',
@@ -304,6 +337,17 @@ function finishSmoke(payload, exitCode) {
   app.exit(exitCode)
 }
 
+async function saveSmokeScreenshot(targetWindow, filename) {
+  if (!targetWindow || targetWindow.isDestroyed()) {
+    throw new Error(`Cannot capture ${filename}: window is unavailable.`)
+  }
+  const image = await targetWindow.webContents.capturePage()
+  const targetPath = path.join(process.cwd(), 'work', filename)
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true })
+  fs.writeFileSync(targetPath, image.toPNG())
+  return targetPath
+}
+
 function getInitialBounds(size) {
   const { workArea } = screen.getPrimaryDisplay()
   return {
@@ -345,6 +389,15 @@ function setExpanded(nextExpanded) {
   return expanded
 }
 
+function revealPrimaryWindow() {
+  if (!widgetWindow || widgetWindow.isDestroyed()) return false
+  setExpanded(true)
+  if (widgetWindow.isMinimized()) widgetWindow.restore()
+  widgetWindow.show()
+  widgetWindow.focus()
+  return true
+}
+
 function sendTaskPickerState(open) {
   if (!widgetWindow || widgetWindow.isDestroyed()) return
   widgetWindow.webContents.send('task-picker:state-changed', Boolean(open))
@@ -373,6 +426,54 @@ function getTaskPickerBounds() {
       workArea.y + workArea.height - Math.min(TASK_PICKER_SIZE.height, workArea.height),
     ),
   }
+}
+
+function attachRendererRecovery(browserWindow, label, critical) {
+  if (isAnySmokeTest) return
+  const limiter = createRecoveryLimiter()
+  let unresponsiveTimer = null
+
+  const clearUnresponsiveTimer = () => {
+    if (unresponsiveTimer) clearTimeout(unresponsiveTimer)
+    unresponsiveTimer = null
+  }
+  const recover = (reason) => {
+    if (isQuitting || browserWindow.isDestroyed()) return
+    const recovery = limiter.record()
+    console.error(`${label} renderer recovery ${recovery.attempt}: ${reason}`)
+
+    if (recovery.exhausted) {
+      dialog.showErrorBox(
+        'Codex Gesture Dock 无法恢复',
+        critical
+          ? '主界面连续发生错误，应用将退出。请重新启动；如果问题持续，请通过项目安全说明中的渠道报告。'
+          : '任务窗口连续发生错误，窗口将关闭。主面板仍可继续使用并重新打开任务窗口。',
+      )
+      if (critical) app.quit()
+      else browserWindow.close()
+      return
+    }
+
+    setTimeout(() => {
+      if (!isQuitting && !browserWindow.isDestroyed()) {
+        browserWindow.webContents.reload()
+      }
+    }, 400 * recovery.attempt)
+  }
+
+  browserWindow.webContents.on('render-process-gone', (_event, details) => {
+    if (details.reason === 'clean-exit') return
+    recover(`${details.reason} (${details.exitCode})`)
+  })
+  browserWindow.on('unresponsive', () => {
+    clearUnresponsiveTimer()
+    unresponsiveTimer = setTimeout(
+      () => recover('unresponsive for 20 seconds'),
+      20_000,
+    )
+  })
+  browserWindow.on('responsive', clearUnresponsiveTimer)
+  browserWindow.on('closed', clearUnresponsiveTimer)
 }
 
 function createTaskPickerWindow() {
@@ -410,15 +511,13 @@ function createTaskPickerWindow() {
 
   taskPickerWindow.setAlwaysOnTop(true, 'floating')
   taskPickerWindow.setMenuBarVisibility(false)
+  attachRendererRecovery(taskPickerWindow, 'Task picker', false)
   taskPickerWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   taskPickerWindow.webContents.on('will-navigate', (event, url) => {
-    const trusted =
-      url.startsWith(APP_URL_PREFIX) ||
-      url.startsWith('http://127.0.0.1:5173/')
-    if (!trusted) event.preventDefault()
+    if (!isTrustedRendererUrl(url)) event.preventDefault()
   })
 
-  const devUrl = process.env.ELECTRON_START_URL
+  const devUrl = getDevServerUrl()
   if (devUrl) taskPickerWindow.loadURL(`${devUrl}?view=tasks`)
   else taskPickerWindow.loadURL(`${APP_URL_PREFIX}index.html?view=tasks`)
 
@@ -511,10 +610,7 @@ function isTrustedSender(event) {
   )
   if (!ownsSender) return false
   const senderUrl = event.senderFrame?.url ?? ''
-  return (
-    senderUrl.startsWith(APP_URL_PREFIX) ||
-    senderUrl.startsWith('http://127.0.0.1:5173/')
-  )
+  return isTrustedRendererUrl(senderUrl)
 }
 
 function isWidgetSender(event) {
@@ -948,12 +1044,10 @@ function createWidgetWindow() {
 
   widgetWindow.setAlwaysOnTop(true, 'floating')
   widgetWindow.setMenuBarVisibility(false)
+  attachRendererRecovery(widgetWindow, 'Widget', true)
   widgetWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   widgetWindow.webContents.on('will-navigate', (event, url) => {
-    const trusted =
-      url.startsWith(APP_URL_PREFIX) ||
-      url.startsWith('http://127.0.0.1:5173/')
-    if (!trusted) event.preventDefault()
+    if (!isTrustedRendererUrl(url)) event.preventDefault()
   })
   widgetWindow.webContents.on(
     'did-fail-load',
@@ -974,7 +1068,7 @@ function createWidgetWindow() {
 
   configurePermissions()
 
-  const devUrl = process.env.ELECTRON_START_URL
+  const devUrl = getDevServerUrl()
   if (devUrl) {
     widgetWindow.loadURL(`${devUrl}?widget=collapsed`)
   } else {
@@ -1039,11 +1133,16 @@ function createWidgetWindow() {
       taskWindow.webContents.once('did-finish-load', () => {
         setTimeout(async () => {
           try {
+            await widgetWindow.webContents.executeJavaScript(
+              'window.widgetControls.setExpanded(true)',
+            )
+            await new Promise((resolve) => setTimeout(resolve, 150))
             const layout = await widgetWindow.webContents.executeJavaScript(`
               (() => {
                 const camera = document.querySelector('.compact-camera')
                 const cameraRect = camera?.getBoundingClientRect()
                 return {
+                  expanded: document.querySelector('.widget-root')?.classList.contains('is-expanded') === true,
                   cameraVisible: Boolean(cameraRect && cameraRect.width > 300 && cameraRect.height > 240),
                   gestureCount: document.querySelectorAll('.gesture-book-grid article').length,
                 }
@@ -1066,6 +1165,19 @@ function createWidgetWindow() {
             const taskPickerVisible = await taskWindow.webContents.executeJavaScript(`
               Boolean(document.querySelector('.task-window-root .task-picker'))
             `)
+            widgetWindow.showInactive()
+            taskWindow.showInactive()
+            widgetWindow.webContents.invalidate()
+            taskWindow.webContents.invalidate()
+            await new Promise((resolve) => setTimeout(resolve, 120))
+            const dashboardScreenshot = await saveSmokeScreenshot(
+              widgetWindow,
+              'electron-dashboard-smoke.png',
+            )
+            const taskPickerScreenshot = await saveSmokeScreenshot(
+              taskWindow,
+              'electron-task-picker-smoke.png',
+            )
             const widgetBounds = widgetWindow.getBounds()
             const taskBounds = taskWindow.getBounds()
             const passed =
@@ -1075,6 +1187,7 @@ function createWidgetWindow() {
               taskWindow !== widgetWindow &&
               taskWindow.webContents.getURL().includes('view=tasks') &&
               taskPickerVisible &&
+              layout.expanded &&
               layout.cameraVisible &&
               layout.gestureCount === 6 &&
               safety.paused &&
@@ -1095,6 +1208,8 @@ function createWidgetWindow() {
                 ...layout,
                 ...safety,
                 taskPickerVisible,
+                dashboardScreenshot,
+                taskPickerScreenshot,
               },
               passed ? 0 : 1,
             )
@@ -1120,21 +1235,32 @@ function createWidgetWindow() {
   })
 }
 
-app.whenReady().then(() => {
-  loadTaskBinding()
-  codexAdapter.setWindowsControlEnabled(loadWindowsControlEnabled())
-  codexAdapter.startWindowsMonitoring(handleWindowsControlEvent)
-  registerAppProtocol()
-  registerIpc()
-  createWidgetWindow()
-  desktopAutoUpdater.start()
-  void codexAdapter.ensureStarted().catch((error) => {
-    console.warn('Codex App Server preflight failed:', error)
+if (!hasSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    revealPrimaryWindow()
   })
-})
 
-app.on('window-all-closed', () => app.quit())
-app.on('before-quit', () => {
-  desktopAutoUpdater.close()
-  codexAdapter.close()
-})
+  app.whenReady().then(() => {
+    app.setAppUserModelId('com.codexgesturedock.desktop')
+    loadTaskBinding()
+    codexAdapter.setWindowsControlEnabled(loadWindowsControlEnabled())
+    codexAdapter.startWindowsMonitoring(handleWindowsControlEvent)
+    registerAppProtocol()
+    registerIpc()
+    createWidgetWindow()
+    desktopAutoUpdater.start()
+    void codexAdapter.ensureStarted().catch((error) => {
+      if (error?.code === APP_SERVER_CLOSED_CODE) return
+      console.warn('Codex App Server preflight failed:', error)
+    })
+  })
+
+  app.on('window-all-closed', () => app.quit())
+  app.on('before-quit', () => {
+    isQuitting = true
+    desktopAutoUpdater.close()
+    codexAdapter.close()
+  })
+}

@@ -6,54 +6,132 @@ on:
       - "v*"
 
 permissions:
+  attestations: write
   contents: write
+  id-token: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   windows-release:
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
           cache: npm
+      - name: Require the tagged commit to belong to main
+        shell: pwsh
+        run: |
+          git fetch origin main --no-tags
+          git merge-base --is-ancestor HEAD origin/main
+          if ($LASTEXITCODE -ne 0) {
+            throw "Release tags must point to a commit contained in origin/main."
+          }
       - run: npm ci
+      - run: npm audit --audit-level=high --registry=https://registry.npmjs.org
       - name: Verify tag and package versions
         shell: pwsh
         run: npm run version:check -- --tag "${{ github.ref_name }}"
+      - run: npm run licenses:check
       - run: npm test
       - run: npm run lint
-      - run: npm run dist:win
+      - name: Require Windows signing configuration
+        shell: pwsh
         env:
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          WIN_CSC_SUBJECT: ${{ vars.WIN_CSC_SUBJECT }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WIN_CSC_LINK)) {
+            throw "WIN_CSC_LINK is required for a production release."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:WIN_CSC_KEY_PASSWORD)) {
+            throw "WIN_CSC_KEY_PASSWORD is required for a production release."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:WIN_CSC_SUBJECT)) {
+            throw "WIN_CSC_SUBJECT repository variable is required for a production release."
+          }
+      - run: npm run release:win
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+      - run: npm run sbom:generate
+      - name: Verify signed Windows artifacts
+        shell: pwsh
+        env:
+          WIN_CSC_SUBJECT: ${{ vars.WIN_CSC_SUBJECT }}
+        run: ./scripts/verify-windows-artifacts.ps1 -RequireSignature -ExpectedSignerSubject $env:WIN_CSC_SUBJECT
+      - name: Run packaged Windows smoke tests
+        run: npm run desktop:smoke:packaged
+      - name: Download previous public installer
+        id: previous
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/download-previous-installer.ps1 -Repository "${{ github.repository }}" -AllowMissing
+      - name: Verify signed install, optional upgrade, and uninstall
+        shell: pwsh
+        env:
+          WIN_CSC_SUBJECT: ${{ vars.WIN_CSC_SUBJECT }}
+        run: ./scripts/install-smoke.ps1 -PreviousInstaller "${{ steps.previous.outputs.path }}" -RequireSignature -ExpectedSignerSubject $env:WIN_CSC_SUBJECT
       - name: Generate SHA-256 checksum
         shell: pwsh
         run: |
-          $artifacts = Get-ChildItem artifacts -File | Where-Object {
-            $_.Name -match '\.(exe|blockmap)$' -or $_.Name -eq 'latest.yml'
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $artifactNames = @(
+            "Codex-Gesture-Dock-$version-setup.exe",
+            "Codex-Gesture-Dock-$version-portable.exe",
+            "Codex-Gesture-Dock-$version-setup.exe.blockmap",
+            "latest.yml",
+            "sbom.cdx.json"
+          )
+          $artifacts = foreach ($name in $artifactNames) {
+            $path = Join-Path artifacts $name
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Required release artifact is missing: $name"
+            }
+            Get-Item -LiteralPath $path
           }
-          if (-not ($artifacts.Name -match '-setup\.exe$')) { throw "NSIS installer was not generated." }
-          if (-not ($artifacts.Name -match '-portable\.exe$')) { throw "Portable executable was not generated." }
-          if (-not ($artifacts.Name -contains 'latest.yml')) { throw "Updater metadata was not generated." }
           $lines = foreach ($artifact in $artifacts) {
             $hash = (Get-FileHash -Algorithm SHA256 $artifact.FullName).Hash.ToLowerInvariant()
             "$hash  $($artifact.Name)"
           }
           $lines | Set-Content artifacts/SHA256SUMS.txt -Encoding ascii
+      - name: Attest release provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
+        with:
+          subject-path: |
+            artifacts/*.exe
+            artifacts/*.blockmap
+            artifacts/latest.yml
+            artifacts/sbom.cdx.json
+            artifacts/SHA256SUMS.txt
       - name: Publish GitHub Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = "${{ github.ref_name }}"
-          $artifacts = Get-ChildItem artifacts -File | Where-Object {
-            $_.Name -match '\.(exe|blockmap)$' -or $_.Name -eq 'latest.yml' -or $_.Name -eq 'SHA256SUMS.txt'
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $artifactNames = @(
+            "Codex-Gesture-Dock-$version-setup.exe",
+            "Codex-Gesture-Dock-$version-portable.exe",
+            "Codex-Gesture-Dock-$version-setup.exe.blockmap",
+            "latest.yml",
+            "sbom.cdx.json",
+            "SHA256SUMS.txt"
+          )
+          $artifacts = foreach ($name in $artifactNames) {
+            Get-Item -LiteralPath (Join-Path artifacts $name)
           }
           if (gh release view $tag 2>$null) {
-            gh release upload $tag $artifacts.FullName --clobber
-          } else {
-            gh release create $tag $artifacts.FullName --verify-tag --generate-notes --title "Codex Gesture Dock $tag"
+            throw "Release $tag already exists; refusing to overwrite immutable release assets."
           }
+          gh release create $tag $artifacts.FullName --verify-tag --generate-notes --title "Codex Gesture Dock $tag"

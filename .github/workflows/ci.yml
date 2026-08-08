@@ -8,17 +8,79 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm audit --audit-level=high --registry=https://registry.npmjs.org
       - run: npm run version:check
+      - run: npm run licenses:check
       - run: npm test
       - run: npm run lint
       - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:a11y
+      - name: Upload accessibility test evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: accessibility-test-evidence
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            work/playwright-report
+            work/playwright-results
+
+  windows-package:
+    needs: test
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm audit --audit-level=high --registry=https://registry.npmjs.org
+      - run: npm run dist:win
+      - run: npm run sbom:generate
+      - run: npm run verify:win-artifacts
+      - run: npm run desktop:smoke:packaged
+      - name: Download previous public installer
+        id: previous
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/download-previous-installer.ps1 -Repository "${{ github.repository }}" -AllowMissing
+      - name: Verify install, optional upgrade, and uninstall
+        shell: pwsh
+        run: ./scripts/install-smoke.ps1 -PreviousInstaller "${{ steps.previous.outputs.path }}"
+      - name: Upload Windows verification evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: windows-verification-evidence
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            artifacts/latest.yml
+            artifacts/sbom.cdx.json
+            work/windows-artifact-verification.json
+            work/electron-smoke.json
+            work/electron-task-window-smoke.json
+            work/electron-dashboard-smoke.png
+            work/electron-task-picker-smoke.png
+            work/windows-install-verification.json
+            work/previous-release/verification.json

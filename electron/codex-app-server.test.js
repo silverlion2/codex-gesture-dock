@@ -12,6 +12,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const {
+  APP_SERVER_CLOSED_CODE,
   CodexAppServerClient,
   resolveCodexCommand,
 } = require('./codex-app-server.cjs')
@@ -147,6 +148,24 @@ describe('Codex App Server client', () => {
       connected: true,
       userAgent: 'codex_cli_rs/0.145.0',
     })
+  })
+
+  it('marks pending requests as intentionally closed during shutdown', async () => {
+    const client = new CodexAppServerClient()
+    const pendingRequest = new Promise((resolve, reject) => {
+      client.pending.set('1', {
+        resolve,
+        reject,
+        timer: setTimeout(() => {}, 60_000),
+      })
+    })
+
+    client.close()
+
+    await expect(pendingRequest).rejects.toMatchObject({
+      code: APP_SERVER_CLOSED_CODE,
+    })
+    expect(client.pending).toHaveLength(0)
   })
 
   it('steers an active turn instead of starting a conflicting turn', async () => {

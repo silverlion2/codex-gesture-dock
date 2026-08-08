@@ -7,6 +7,7 @@ const { spawn } = require('node:child_process')
 const { version: APP_VERSION } = require('../package.json')
 
 const REQUEST_TIMEOUT_MS = 12_000
+const APP_SERVER_CLOSED_CODE = 'ERR_CODEX_APP_SERVER_CLOSED'
 const TASK_PAGE_SIZE = 12
 const MAX_COMPLETED_SCAN_PAGES = 10
 const RECENT_FILE_TASK_LIMIT = 8
@@ -101,6 +102,12 @@ function displayFilePath(cwd, absolutePath) {
     return relativePath
   }
   return absolutePath
+}
+
+function createAppServerClosedError() {
+  const error = new Error('Codex App Server 连接已关闭')
+  error.code = APP_SERVER_CLOSED_CODE
+  return error
 }
 
 class CodexAppServerClient {
@@ -524,7 +531,7 @@ class CodexAppServerClient {
   }
 
   close() {
-    this.failAll(new Error('Codex App Server 连接已关闭'))
+    this.failAll(createAppServerClosedError())
     this.serverRequests.clear()
     this.onServerRequestsCleared?.()
     this.reader?.close()
@@ -537,6 +544,7 @@ class CodexAppServerClient {
 
 module.exports = {
   ACTION_PROMPTS,
+  APP_SERVER_CLOSED_CODE,
   CodexAppServerClient,
   resolveCodexCommand,
 }

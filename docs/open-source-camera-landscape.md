@@ -26,6 +26,28 @@
 
 最终选择了第一个方向，并在后续版本中叠加了 Codex 手势控制与任务选择器。
 
+## 2026-08-08 同类项目复查
+
+| 项目 | 可借鉴点 | 与本项目的差异 / 结论 |
+| --- | --- | --- |
+| [BatesPosture](https://github.com/wtbates99/batesposture) | 托盘常驻、个人校准、会话统计、可选本地日志，以及低性能设备上的自适应负载 | 最接近本项目的坐姿模块；本项目继续坚持不保存关键点，并优先降低持续推理负载 |
+| [Pose Nudge](https://github.com/DDULDDUCK/pose-nudge) | 前伸头部检测、提醒间隔、分析频率、灵敏度和统计面板 | Tauri + React，健康提醒更聚焦；本项目需要同时为手势控制保留摄像头会话，因此恢复能力比自动退出更重要 |
+| [postured](https://github.com/vadi2/postured) | 低干扰托盘交互、仅在需要时提醒、低 CPU 目标 | 面向 Linux 且功能更窄；验证了“后台轻量、异常时提示”的产品方向 |
+| [GestureX](https://gesturex.app/) | 手势到媒体、演示与桌面动作的明确映射 | 更偏通用控制；本项目保留固定白名单、保持确认和松手复位，避免误触及任意命令执行 |
+
+Google 的 [MediaPipe Web Gesture Recognizer 指南](https://developers.google.com/edge/mediapipe/solutions/vision/gesture_recognizer/web_js) 明确指出视频识别会同步阻塞主线程。基于这次复查，姿态循环采用 10 FPS 上限，并在视频暂时未就绪时继续调度以自动恢复；手势循环继续使用独立的 135 ms 间隔和保持状态机。后续若实测仍有明显卡顿，再将两个识别器迁移到 Web Worker，而不是继续提高主线程采样率。
+
+### 多功能摄像头扩展选型
+
+| 项目 | 结论 |
+| --- | --- |
+| [ZXing Browser](https://github.com/zxing-js/browser) | 采用。MIT、TypeScript、可直接解码现有 video 元素，并覆盖 QR、Data Matrix 与常见一维码；只在扫码模式动态加载。 |
+| [html5-qrcode](https://github.com/mebjas/html5-qrcode) | 暂不采用。功能完整且自带 UI，但项目声明处于维护模式；本项目已有摄像头生命周期和界面系统。 |
+| [jscanify](https://github.com/puffinsoft/jscanify) | 后续候选。MIT，可用 OpenCV.js 标出并透视提取纸张；当前先交付零额外 WASM 的明确拍摄/预览/保存闭环。 |
+| [Tesseract.js](https://github.com/naptha/tesseract.js) | 后续候选。Apache-2.0 且支持浏览器 OCR，但语言数据体积、首次加载来源和识别性能需要先完成离线打包设计。 |
+
+第一阶段因此包含姿态、QR/条码、文档快照和镜像切换。OCR、自动纸张边缘矫正、背景移除与虚拟摄像头留在后续阶段，避免一次引入多个高负载推理管线。
+
 ## 技术与产品原则
 
 - 摄像头、姿态和手势推理默认在本机完成。

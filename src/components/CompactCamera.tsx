@@ -2,12 +2,15 @@ import {
   AlertCircle,
   Camera,
   CheckCircle2,
+  FlipHorizontal2,
   Hand,
   RotateCcw,
 } from 'lucide-react'
 import type { RefObject } from 'react'
 import type { GestureViewState } from '../hooks/useGestureControl'
 import type { MonitorPhase } from '../hooks/usePoseMonitor'
+import type { CodeScannerPhase } from '../hooks/useCodeScanner'
+import type { CameraMode } from '../lib/cameraTools'
 import { statusLabel, type PostureStatus } from '../lib/posture'
 
 interface CompactCameraProps {
@@ -19,6 +22,10 @@ interface CompactCameraProps {
   calibrationProgress: number
   gesture: GestureViewState
   gestureEnabled: boolean
+  mode: CameraMode
+  mirrored: boolean
+  scanPhase: CodeScannerPhase
+  onMirrorToggle: () => void
   onRecalibrate: () => void
 }
 
@@ -31,12 +38,29 @@ export function CompactCamera({
   calibrationProgress,
   gesture,
   gestureEnabled,
+  mode,
+  mirrored,
+  scanPhase,
+  onMirrorToggle,
   onRecalibrate,
 }: CompactCameraProps) {
   return (
-    <section className="compact-camera" aria-label="摄像头预览">
+    <section
+      className={`compact-camera camera-mode-${mode} ${mirrored ? 'is-mirrored' : ''}`}
+      aria-label="摄像头预览"
+    >
       <video ref={videoRef} autoPlay muted playsInline aria-label="实时摄像头画面" />
-      <canvas ref={canvasRef} aria-hidden="true" />
+      <canvas ref={canvasRef} aria-hidden="true" hidden={mode !== 'monitor'} />
+
+      <button
+        className="mirror-camera-button"
+        type="button"
+        aria-pressed={mirrored}
+        onClick={onMirrorToggle}
+      >
+        <FlipHorizontal2 size={14} aria-hidden="true" />
+        {mirrored ? '镜像' : '原图'}
+      </button>
 
       {phase === 'idle' && (
         <div className="camera-placeholder">
@@ -79,7 +103,7 @@ export function CompactCamera({
         </div>
       )}
 
-      {phase === 'monitoring' && (
+      {phase === 'monitoring' && mode === 'monitor' && (
         <>
           <div className={`camera-status status-${status}`} aria-live="polite">
             <span />
@@ -96,7 +120,7 @@ export function CompactCamera({
         </>
       )}
 
-      {gestureEnabled && phase === 'monitoring' && (
+      {gestureEnabled && phase === 'monitoring' && mode === 'monitor' && (
         <div
           className={`gesture-live ${gesture.binding ? 'has-gesture' : ''}`}
           aria-live="polite"
@@ -118,6 +142,20 @@ export function CompactCamera({
               <b style={{ width: `${gesture.progress * 100}%` }} />
             </i>
           </div>
+        </div>
+      )}
+
+      {phase === 'monitoring' && mode === 'codes' && (
+        <div className="code-scan-guide" aria-hidden="true">
+          <i /><i /><i /><i />
+          <span>{scanPhase === 'detected' ? '已识别' : '将二维码或条码放入框内'}</span>
+        </div>
+      )}
+
+      {phase === 'monitoring' && mode === 'document' && (
+        <div className="document-scan-guide" aria-hidden="true">
+          <i /><i /><i /><i />
+          <span>对齐纸张边缘</span>
         </div>
       )}
 

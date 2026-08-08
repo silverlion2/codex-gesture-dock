@@ -1,14 +1,17 @@
-import { ChevronDown, ListTodo, Mic, ShieldCheck, X } from 'lucide-react'
+import { ChevronDown, ListTodo, Maximize2, Mic, ShieldCheck, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CodexApprovalPanel } from './components/CodexApprovalPanel'
 import { CodexIntegrationPanel } from './components/CodexIntegrationPanel'
 import { CompactCamera } from './components/CompactCamera'
-import { FloatingButton } from './components/FloatingButton'
+import { CameraModeSwitcher } from './components/CameraModeSwitcher'
+import { CameraToolPanel } from './components/CameraToolPanel'
 import { GestureBook } from './components/GestureBook'
+import { MiniCameraControls } from './components/MiniCameraControls'
 import { TaskPicker, type TaskPickerHandle } from './components/TaskPicker'
 import { WidgetMetrics } from './components/WidgetMetrics'
 import { WidgetSettings } from './components/WidgetSettings'
 import { useGestureControl } from './hooks/useGestureControl'
+import { useCodeScanner } from './hooks/useCodeScanner'
 import {
   usePoseMonitor,
   type ReminderSettings,
@@ -29,6 +32,7 @@ import type {
 } from './lib/codexApprovals'
 import type { CodexIntegrationStatus } from './lib/codexIntegration'
 import type { AppUpdateStatus } from './lib/appUpdate'
+import type { CameraMode } from './lib/cameraTools'
 
 const initialSettings: ReminderSettings = {
   postureEnabled: true,
@@ -85,6 +89,8 @@ function WidgetApp() {
   const microphoneTimerRef = useRef<number | null>(null)
   const [expanded, setExpanded] = useState(initialExpandedState)
   const [settings, setSettings] = useState(initialSettings)
+  const [cameraMode, setCameraMode] = useState<CameraMode>('monitor')
+  const [cameraMirrored, setCameraMirrored] = useState(true)
   const [gestureMode, setGestureMode] = useState<GestureMode>(initialGestureMode)
   const [taskPickerOpen, setTaskPickerOpen] = useState(false)
   const [approvalQueue, setApprovalQueue] =
@@ -159,6 +165,11 @@ function WidgetApp() {
     canvasRef,
     settings,
     onReminder: showReminder,
+  })
+
+  const codeScanner = useCodeScanner({
+    active: cameraMode === 'codes' && monitor.phase === 'monitoring',
+    videoRef,
   })
 
   const runCodexAction = useCallback(
@@ -305,7 +316,7 @@ function WidgetApp() {
 
   const gestureBindings = getGestureBindings(gestureMode)
   const gesture = useGestureControl({
-    active: monitor.phase === 'monitoring',
+    active: cameraMode === 'monitor' && monitor.phase === 'monitoring',
     bindings: gestureBindings,
     enabled: settings.gestureEnabled,
     onAction: runGestureAction,
@@ -425,24 +436,13 @@ function WidgetApp() {
 
   const openDashboard = () => {
     changeExpanded(true)
-    if (monitor.phase === 'idle') void monitor.startSession()
   }
 
   return (
     <main className={`widget-root ${expanded ? 'is-expanded' : 'is-collapsed'}`}>
-      <FloatingButton
-        hidden={expanded}
-        gestureActive={settings.gestureEnabled && monitor.phase === 'monitoring'}
-        phase={monitor.phase}
-        score={monitor.score}
-        status={monitor.status}
-        onExpand={openDashboard}
-      />
-
       <section
         className="floating-panel"
-        aria-label="Codex Gesture Dock 控制面板"
-        hidden={!expanded}
+        aria-label={expanded ? 'Codex Gesture Dock 控制面板' : 'Codex Gesture Dock 迷你摄像头'}
       >
         <header className="widget-header">
           <div className="widget-brand">
@@ -454,6 +454,15 @@ function WidgetApp() {
           </div>
           <div className="window-actions">
             <button
+              className="compact-only"
+              type="button"
+              aria-label="打开完整控制面板"
+              onClick={openDashboard}
+            >
+              <Maximize2 size={17} aria-hidden="true" />
+            </button>
+            <button
+              className="expanded-only"
               type="button"
               aria-label="打开 Codex 任务选择器"
               onClick={openTaskPicker}
@@ -461,6 +470,7 @@ function WidgetApp() {
               <ListTodo size={18} aria-hidden="true" />
             </button>
             <button
+              className="expanded-only"
               type="button"
               aria-label="收起菜单"
               onClick={() => changeExpanded(false)}
@@ -475,12 +485,12 @@ function WidgetApp() {
 
         <div className="widget-content">
           <section className="dashboard-monitor" aria-label="实时摄像头与坐姿数据">
-            <header className="dashboard-section-heading">
+            <header className="dashboard-section-heading camera-workspace-heading">
               <div>
                 <span className="live-indicator" aria-hidden="true" />
                 LIVE CAMERA
               </div>
-              <span>本机推理 · 不保存画面</span>
+              <CameraModeSwitcher mode={cameraMode} onChange={setCameraMode} />
             </header>
 
             <CompactCamera
@@ -492,28 +502,64 @@ function WidgetApp() {
               calibrationProgress={monitor.calibrationProgress}
               gesture={gesture}
               gestureEnabled={settings.gestureEnabled}
+              mode={cameraMode}
+              mirrored={cameraMirrored}
+              scanPhase={codeScanner.phase}
+              onMirrorToggle={() => setCameraMirrored((current) => !current)}
               onRecalibrate={monitor.recalibrate}
             />
 
-            <div className="monitor-data-grid">
-              <WidgetMetrics
-                score={monitor.score}
+            {!expanded ? (
+              <MiniCameraControls
+                mode={cameraMode}
+                phase={monitor.phase}
                 status={monitor.status}
-                sessionSeconds={monitor.sessionSeconds}
-                awayCount={monitor.awayCount}
-                trend={monitor.trend}
+                score={monitor.score}
+                actionLabel={actionLabel}
+                mirrored={cameraMirrored}
+                videoRef={videoRef}
+                scanPhase={codeScanner.phase}
+                scanResult={codeScanner.result}
+                scanError={codeScanner.error}
+                onClearScan={codeScanner.clearResult}
+                onSessionToggle={handlePrimaryAction}
+                onMessage={showReminder}
               />
-            </div>
+            ) : cameraMode === 'monitor' ? (
+              <>
+                <div className="monitor-data-grid">
+                  <WidgetMetrics
+                    score={monitor.score}
+                    status={monitor.status}
+                    sessionSeconds={monitor.sessionSeconds}
+                    awayCount={monitor.awayCount}
+                    trend={monitor.trend}
+                  />
+                </div>
 
-            <WidgetSettings
-              settings={settings}
-              gestureMode={gestureMode}
-              onChange={setSettings}
-              onGestureModeChange={setGestureMode}
-            />
+                <WidgetSettings
+                  settings={settings}
+                  gestureMode={gestureMode}
+                  onChange={setSettings}
+                  onGestureModeChange={setGestureMode}
+                />
+              </>
+            ) : (
+              <CameraToolPanel
+                mode={cameraMode}
+                videoRef={videoRef}
+                mirrored={cameraMirrored}
+                sessionReady={monitor.phase === 'monitoring'}
+                scanPhase={codeScanner.phase}
+                scanResult={codeScanner.result}
+                scanError={codeScanner.error}
+                onClearScan={codeScanner.clearResult}
+                onMessage={showReminder}
+              />
+            )}
           </section>
 
-          <aside className="dashboard-controls" aria-label="手势手册与会话控制">
+          {expanded && <aside className="dashboard-controls" aria-label="手势手册与会话控制">
             <GestureBook
               enabled={settings.gestureEnabled}
               gesture={gesture}
@@ -571,11 +617,11 @@ function WidgetApp() {
                 </button>
               </section>
             )}
-          </aside>
+          </aside>}
         </div>
       </section>
 
-      {toast && expanded && (
+      {toast && (
         <div className="widget-toast" role="status">
           <strong>Codex Gesture Dock</strong>
           <span>{toast}</span>
