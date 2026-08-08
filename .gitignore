@@ -8,3 +8,5 @@ work/
 output/
 .playwright-cli/
 *.log
+public/ocr/
+public/vision/

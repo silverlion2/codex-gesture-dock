@@ -19,7 +19,25 @@ const knownLicenseFiles = new Map([
     'lazy-val',
     path.join(projectRoot, 'third_party_licenses', 'LazyVal-MIT.txt'),
   ],
+  [
+    '@napi-rs/canvas-win32-x64-msvc',
+    path.join(projectRoot, 'node_modules', '@napi-rs', 'canvas', 'LICENSE'),
+  ],
+  [
+    'tr46',
+    path.join(projectRoot, 'third_party_licenses', 'Tr46-MIT.txt'),
+  ],
+  ...['eng', 'chi_sim', 'chi_tra'].map((language) => [
+    `@tesseract.js-data/${language}`,
+    path.join(projectRoot, 'third_party_licenses', 'MediaPipe-Apache-2.0.txt'),
+  ]),
 ])
+const licenseOverrides = new Map(
+  ['eng', 'chi_sim', 'chi_tra'].map((language) => [
+    `@tesseract.js-data/${language}`,
+    'Apache-2.0',
+  ]),
+)
 
 if (!npmCli) {
   throw new Error('Run this command through npm so npm_execpath is available.')
@@ -53,6 +71,7 @@ const licenseSections = []
 const missingLicenses = []
 
 for (const entry of packages) {
+  const license = licenseOverrides.get(entry.name) || String(entry.license || 'UNKNOWN')
   const licenseFiles = await findLicenseFiles(entry.path)
   const licenseSources = licenseFiles.map((licenseFile) => ({
     path: path.join(entry.path, licenseFile),
@@ -66,14 +85,14 @@ for (const entry of packages) {
     })
   }
   if (licenseSources.length === 0) {
-    missingLicenses.push(`${entry.name}@${entry.version} (${entry.license || 'UNKNOWN'})`)
+    missingLicenses.push(`${entry.name}@${entry.version} (${license})`)
     continue
   }
 
   inventory.push({
     name: entry.name,
     version: entry.version,
-    license: String(entry.license || 'UNKNOWN'),
+    license,
   })
 
   for (const licenseSource of licenseSources) {
@@ -82,7 +101,7 @@ for (const entry of packages) {
     licenseSections.push(
       [
         '='.repeat(80),
-        `${entry.name}@${entry.version} — ${entry.license || 'UNKNOWN'}`,
+        `${entry.name}@${entry.version} — ${license}`,
         `Source file: ${licenseSource.name}`,
         `SHA-256 (first 12): ${digest}`,
         '='.repeat(80),

@@ -74,7 +74,7 @@ export function CodexApprovalPanel({
             {busy ? '正在响应' : '仅允许本次'}
           </button>
         </div>
-        <p className="task-gesture-help">👍 仅允许本次 · ✌ 拒绝</p>
+        <p className="task-gesture-help">拇指仅允许本次 · 胜利手势拒绝</p>
       </div>
     </section>
   )

@@ -24,6 +24,7 @@ function renderControls(
     scanPhase: 'idle',
     scanResult: null,
     scanError: '',
+    mediaControls: null,
     onClearScan: vi.fn(),
     onSessionToggle: vi.fn(),
     onMessage: vi.fn(),
@@ -68,5 +69,13 @@ describe('MiniCameraControls', () => {
     expect(screen.getByText('先启动摄像头')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '启动' }))
     expect(props.onSessionToggle).toHaveBeenCalledTimes(1)
+  })
+
+  it('directs compact OCR users to the full panel without starting the camera', () => {
+    const props = renderControls({ mode: 'ocr' })
+
+    expect(screen.getByText('文件 OCR')).toBeTruthy()
+    expect(screen.getByText('点击右上角展开，在完整面板中选择文件')).toBeTruthy()
+    expect(props.onSessionToggle).not.toHaveBeenCalled()
   })
 })

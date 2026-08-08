@@ -4,7 +4,7 @@ export default defineConfig({
   testDir: './tests/e2e',
   testMatch: '**/*.pw.ts',
   outputDir: './work/playwright-results',
-  timeout: 30_000,
+  timeout: 60_000,
   expect: {
     timeout: 5_000,
   },

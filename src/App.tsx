@@ -1,4 +1,16 @@
-import { ChevronDown, ListTodo, Maximize2, Mic, ShieldCheck, X } from 'lucide-react'
+import {
+  Armchair,
+  Camera,
+  ChevronDown,
+  ListTodo,
+  Maximize2,
+  Mic,
+  PauseCircle,
+  PlayCircle,
+  Settings,
+  ShieldCheck,
+  X,
+} from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CodexApprovalPanel } from './components/CodexApprovalPanel'
 import { CodexIntegrationPanel } from './components/CodexIntegrationPanel'
@@ -6,12 +18,19 @@ import { CompactCamera } from './components/CompactCamera'
 import { CameraModeSwitcher } from './components/CameraModeSwitcher'
 import { CameraToolPanel } from './components/CameraToolPanel'
 import { GestureBook } from './components/GestureBook'
+import {
+  CompactMediaControls,
+  MediaInputPanel,
+} from './components/MediaInputControls'
 import { MiniCameraControls } from './components/MiniCameraControls'
+import { OcrToolPanel } from './components/OcrToolPanel'
 import { TaskPicker, type TaskPickerHandle } from './components/TaskPicker'
 import { WidgetMetrics } from './components/WidgetMetrics'
 import { WidgetSettings } from './components/WidgetSettings'
 import { useGestureControl } from './hooks/useGestureControl'
+import { useAudioInput } from './hooks/useAudioInput'
 import { useCodeScanner } from './hooks/useCodeScanner'
+import { useMediaDevices } from './hooks/useMediaDevices'
 import {
   usePoseMonitor,
   type ReminderSettings,
@@ -33,6 +52,11 @@ import type {
 import type { CodexIntegrationStatus } from './lib/codexIntegration'
 import type { AppUpdateStatus } from './lib/appUpdate'
 import type { CameraMode } from './lib/cameraTools'
+import {
+  loadMediaPreferences,
+  saveMediaPreferences,
+  type CameraFraming,
+} from './lib/mediaPreferences'
 
 const initialSettings: ReminderSettings = {
   postureEnabled: true,
@@ -90,17 +114,18 @@ function WidgetApp() {
   const [expanded, setExpanded] = useState(initialExpandedState)
   const [settings, setSettings] = useState(initialSettings)
   const [cameraMode, setCameraMode] = useState<CameraMode>('monitor')
-  const [cameraMirrored, setCameraMirrored] = useState(true)
+  const [mediaPreferences, setMediaPreferences] = useState(loadMediaPreferences)
   const [gestureMode, setGestureMode] = useState<GestureMode>(initialGestureMode)
   const [taskPickerOpen, setTaskPickerOpen] = useState(false)
   const [approvalQueue, setApprovalQueue] =
     useState<CodexApprovalRequest[]>(initialApprovalQueue)
   const [approvalBusy, setApprovalBusy] = useState(false)
   const [toast, setToast] = useState('')
-  const [microphoneActive, setMicrophoneActive] = useState(false)
+  const [codexMicrophoneActive, setCodexMicrophoneActive] = useState(false)
   const [integrationStatus, setIntegrationStatus] =
     useState<CodexIntegrationStatus | null>(null)
   const [windowsControlBusy, setWindowsControlBusy] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<AppUpdateStatus | null>(null)
   const currentApproval = approvalQueue[0] ?? null
 
@@ -109,6 +134,18 @@ function WidgetApp() {
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current)
     toastTimerRef.current = window.setTimeout(() => setToast(''), 5_000)
   }, [])
+
+  const { videoInputs, audioInputs, refreshDevices } = useMediaDevices()
+  const {
+    phase: audioPhase,
+    level: audioLevel,
+    error: audioError,
+    start: startAudioInput,
+    stop: stopAudioInput,
+  } = useAudioInput({
+    deviceId: mediaPreferences.audioDeviceId,
+    onActivated: refreshDevices,
+  })
 
   const refreshIntegrationStatus = useCallback(async () => {
     const controls = window.widgetControls
@@ -164,6 +201,7 @@ function WidgetApp() {
     videoRef,
     canvasRef,
     settings,
+    videoDeviceId: mediaPreferences.videoDeviceId,
     onReminder: showReminder,
   })
 
@@ -193,13 +231,13 @@ function WidgetApp() {
         }
       }
       if (action === 'dictation') {
-        setMicrophoneActive(result.ok)
+        setCodexMicrophoneActive(result.ok)
         if (microphoneTimerRef.current !== null) {
           window.clearTimeout(microphoneTimerRef.current)
         }
         if (result.ok) {
           microphoneTimerRef.current = window.setTimeout(
-            () => setMicrophoneActive(false),
+            () => setCodexMicrophoneActive(false),
             12_000,
           )
         }
@@ -333,6 +371,50 @@ function WidgetApp() {
   }, [gestureMode])
 
   useEffect(() => {
+    saveMediaPreferences(mediaPreferences)
+  }, [mediaPreferences])
+
+  useEffect(() => {
+    if (monitor.phase === 'calibrating' || monitor.phase === 'monitoring') {
+      void refreshDevices()
+    }
+  }, [monitor.phase, refreshDevices])
+
+  useEffect(() => {
+    if (
+      mediaPreferences.videoDeviceId &&
+      videoInputs.length > 0 &&
+      !videoInputs.some(
+        (device) => device.deviceId === mediaPreferences.videoDeviceId,
+      )
+    ) {
+      setMediaPreferences((current) => ({ ...current, videoDeviceId: '' }))
+    }
+  }, [mediaPreferences.videoDeviceId, videoInputs])
+
+  useEffect(() => {
+    if (
+      mediaPreferences.audioDeviceId &&
+      audioInputs.length > 0 &&
+      !audioInputs.some(
+        (device) => device.deviceId === mediaPreferences.audioDeviceId,
+      )
+    ) {
+      if (audioPhase === 'active' || audioPhase === 'loading') {
+        stopAudioInput()
+      }
+      setMediaPreferences((current) => ({ ...current, audioDeviceId: '' }))
+      showReminder('所选麦克风已断开，已关闭音频输入')
+    }
+  }, [
+    audioPhase,
+    audioInputs,
+    mediaPreferences.audioDeviceId,
+    showReminder,
+    stopAudioInput,
+  ])
+
+  useEffect(() => {
     const controls = window.widgetControls
     document.documentElement.classList.toggle('electron-runtime', Boolean(controls))
     if (!controls) return
@@ -434,25 +516,100 @@ function WidgetApp() {
     else void monitor.startSession()
   }
 
+  const handleVideoDeviceChange = (deviceId: string) => {
+    setMediaPreferences((current) => ({ ...current, videoDeviceId: deviceId }))
+    if (sessionActive) void monitor.startSession(deviceId)
+  }
+
+  const handleAudioDeviceChange = (deviceId: string) => {
+    setMediaPreferences((current) => ({ ...current, audioDeviceId: deviceId }))
+    if (audioPhase === 'active' || audioPhase === 'loading') {
+      void startAudioInput(deviceId)
+    }
+  }
+
+  const handleCameraFramingChange = (cameraFraming: CameraFraming) => {
+    setMediaPreferences((current) => ({ ...current, cameraFraming }))
+  }
+
+  const handleAudioToggle = () => {
+    if (audioPhase === 'active' || audioPhase === 'loading') {
+      stopAudioInput()
+    } else {
+      void startAudioInput()
+    }
+  }
+
+  const mediaControlProps = {
+    videoInputs,
+    audioInputs,
+    videoDeviceId: mediaPreferences.videoDeviceId,
+    audioDeviceId: mediaPreferences.audioDeviceId,
+    cameraFraming: mediaPreferences.cameraFraming,
+    audioPhase,
+    audioLevel,
+    audioError,
+    onVideoDeviceChange: handleVideoDeviceChange,
+    onAudioDeviceChange: handleAudioDeviceChange,
+    onCameraFramingChange: handleCameraFramingChange,
+    onAudioToggle: handleAudioToggle,
+  }
+
   const openDashboard = () => {
     changeExpanded(true)
   }
 
   return (
-    <main className={`widget-root ${expanded ? 'is-expanded' : 'is-collapsed'}`}>
+    <main
+      className={`widget-root ${expanded ? 'is-expanded' : 'is-collapsed'} ${sessionActive ? 'has-active-camera' : ''} ${audioPhase === 'active' ? 'has-active-audio' : ''}`}
+    >
       <section
         className="floating-panel"
         aria-label={expanded ? 'Codex Gesture Dock 控制面板' : 'Codex Gesture Dock 迷你摄像头'}
       >
         <header className="widget-header">
           <div className="widget-brand">
-            <strong>Codex Dock</strong>
-            <span>
-              <ShieldCheck size={15} aria-hidden="true" />
-              仅在本机处理
-            </span>
+            <strong>端正</strong>
+            <div className="widget-trust-row">
+              <span>
+                <ShieldCheck size={15} aria-hidden="true" />
+                仅在本机处理 · 隐私优先
+              </span>
+              <span className="camera-running-state">
+                <i aria-hidden="true" />
+                <Camera size={14} aria-hidden="true" />
+                {sessionActive ? '摄像头运行中' : '摄像头待命'}
+              </span>
+            </div>
           </div>
           <div className="window-actions">
+            {expanded && (
+              <button
+                className={`window-safety-toggle ${integrationStatus?.control?.enabled === false ? 'is-paused' : ''}`}
+                type="button"
+                disabled={windowsControlBusy}
+                aria-pressed={integrationStatus?.control?.enabled ?? true}
+                onClick={() =>
+                  void setWindowsControlEnabled(
+                    !(integrationStatus?.control?.enabled ?? true),
+                  )
+                }
+              >
+                {integrationStatus?.control?.enabled === false ? (
+                  <PlayCircle size={18} aria-hidden="true" />
+                ) : (
+                  <PauseCircle size={18} aria-hidden="true" />
+                )}
+                <span>
+                  <strong>
+                    {integrationStatus?.control?.enabled === false
+                      ? '恢复 Windows 控制'
+                      : '暂停 Windows 控制'}
+                  </strong>
+                  <small>手势识别仍保持可用</small>
+                </span>
+              </button>
+            )}
             <button
               className="compact-only"
               type="button"
@@ -468,6 +625,15 @@ function WidgetApp() {
               onClick={openTaskPicker}
             >
               <ListTodo size={18} aria-hidden="true" />
+            </button>
+            <button
+              className="expanded-only"
+              type="button"
+              aria-label={settingsOpen ? '关闭设置' : '打开设置'}
+              aria-pressed={settingsOpen}
+              onClick={() => setSettingsOpen((current) => !current)}
+            >
+              <Settings size={18} aria-hidden="true" />
             </button>
             <button
               className="expanded-only"
@@ -488,10 +654,14 @@ function WidgetApp() {
             <header className="dashboard-section-heading camera-workspace-heading">
               <div>
                 <span className="live-indicator" aria-hidden="true" />
-                LIVE CAMERA
+                实时镜头
               </div>
               <CameraModeSwitcher mode={cameraMode} onChange={setCameraMode} />
             </header>
+
+            {expanded && cameraMode !== 'ocr' && cameraMode !== 'card' ? (
+              <MediaInputPanel {...mediaControlProps} />
+            ) : null}
 
             <CompactCamera
               videoRef={videoRef}
@@ -503,11 +673,46 @@ function WidgetApp() {
               gesture={gesture}
               gestureEnabled={settings.gestureEnabled}
               mode={cameraMode}
-              mirrored={cameraMirrored}
+              mirrored={mediaPreferences.cameraMirrored}
+              framing={mediaPreferences.cameraFraming}
               scanPhase={codeScanner.phase}
-              onMirrorToggle={() => setCameraMirrored((current) => !current)}
+              onMirrorToggle={() =>
+                setMediaPreferences((current) => ({
+                  ...current,
+                  cameraMirrored: !current.cameraMirrored,
+                }))
+              }
               onRecalibrate={monitor.recalibrate}
             />
+
+            {expanded && cameraMode === 'monitor' && (
+              <section className="current-task-hero" aria-label="当前 Codex 任务">
+                <div>
+                  <span>当前任务</span>
+                  <strong>
+                    {integrationStatus?.boundTask?.title || '选择一个 Codex 任务'}
+                  </strong>
+                  <small>
+                    {integrationStatus?.boundTask
+                      ? `${integrationStatus.boundTask.project} · 手势与任务保持同步`
+                      : '绑定任务后，可用手势继续对话、审查代码或切换终端'}
+                  </small>
+                </div>
+                <div className="current-task-actions">
+                  <button type="button" onClick={openTaskPicker}>
+                    <ListTodo size={17} aria-hidden="true" />
+                    {taskPickerOpen ? '任务窗口已打开' : '打开任务'}
+                  </button>
+                  <button
+                    className="session-toggle-secondary"
+                    type="button"
+                    onClick={handlePrimaryAction}
+                  >
+                    {actionLabel}
+                  </button>
+                </div>
+              </section>
+            )}
 
             {!expanded ? (
               <MiniCameraControls
@@ -516,11 +721,12 @@ function WidgetApp() {
                 status={monitor.status}
                 score={monitor.score}
                 actionLabel={actionLabel}
-                mirrored={cameraMirrored}
+                mirrored={mediaPreferences.cameraMirrored}
                 videoRef={videoRef}
                 scanPhase={codeScanner.phase}
                 scanResult={codeScanner.result}
                 scanError={codeScanner.error}
+                mediaControls={<CompactMediaControls {...mediaControlProps} />}
                 onClearScan={codeScanner.clearResult}
                 onSessionToggle={handlePrimaryAction}
                 onMessage={showReminder}
@@ -537,18 +743,12 @@ function WidgetApp() {
                   />
                 </div>
 
-                <WidgetSettings
-                  settings={settings}
-                  gestureMode={gestureMode}
-                  onChange={setSettings}
-                  onGestureModeChange={setGestureMode}
-                />
               </>
-            ) : (
+            ) : cameraMode === 'codes' || cameraMode === 'document' ? (
               <CameraToolPanel
                 mode={cameraMode}
                 videoRef={videoRef}
-                mirrored={cameraMirrored}
+                mirrored={mediaPreferences.cameraMirrored}
                 sessionReady={monitor.phase === 'monitoring'}
                 scanPhase={codeScanner.phase}
                 scanResult={codeScanner.result}
@@ -556,14 +756,49 @@ function WidgetApp() {
                 onClearScan={codeScanner.clearResult}
                 onMessage={showReminder}
               />
+            ) : (
+              <OcrToolPanel
+                key={cameraMode}
+                mode={cameraMode}
+                onMessage={showReminder}
+              />
             )}
           </section>
 
           {expanded && <aside className="dashboard-controls" aria-label="手势手册与会话控制">
+            {cameraMode === 'monitor' && settingsOpen ? (
+              <WidgetSettings
+                settings={settings}
+                gestureMode={gestureMode}
+                onChange={setSettings}
+                onGestureModeChange={setGestureMode}
+              />
+            ) : cameraMode === 'monitor' ? (
+              <section className={`posture-overview status-${monitor.status}`} aria-label="当前坐姿状态">
+                <div>
+                  <span>姿势状态</span>
+                  <strong>
+                    {monitor.status === 'good'
+                      ? '坐姿良好'
+                      : monitor.status === 'fair'
+                        ? '请轻微调整'
+                        : monitor.status === 'poor'
+                          ? '建议坐直休息'
+                          : '等待检测'}
+                  </strong>
+                  <small>
+                    {monitor.score === null
+                      ? '开始监测后显示实时坐姿反馈'
+                      : `当前坐姿评分 ${monitor.score} 分`}
+                  </small>
+                </div>
+                <i aria-hidden="true"><Armchair size={38} strokeWidth={1.7} /></i>
+              </section>
+            ) : null}
             <GestureBook
               enabled={settings.gestureEnabled}
               gesture={gesture}
-              microphoneActive={microphoneActive}
+              microphoneActive={codexMicrophoneActive}
               mode={gestureMode}
             />
 
@@ -588,33 +823,15 @@ function WidgetApp() {
                     void setWindowsControlEnabled(enabled)
                   }
                 />
-                <button
-                  className="open-task-window"
-                  type="button"
-                  onClick={openTaskPicker}
-                >
-                  <ListTodo size={17} aria-hidden="true" />
-                  <span>
-                    <strong>{taskPickerOpen ? '任务窗口已打开' : '打开任务选择窗口'}</strong>
-                    <small>任务与文件操作在独立窗口完成</small>
-                  </span>
-                </button>
-                <div className={`microphone-status ${microphoneActive ? 'is-active' : ''}`}>
+                <div className={`microphone-status ${codexMicrophoneActive ? 'is-active' : ''}`}>
                   <Mic size={16} aria-hidden="true" />
                   <span>
                     <strong>
-                      {microphoneActive ? 'Codex 话筒已激活' : '食指手势激活话筒'}
+                      {codexMicrophoneActive ? 'Codex 话筒已激活' : '食指手势激活话筒'}
                     </strong>
                     <small>食指向上保持 0.85 秒</small>
                   </span>
                 </div>
-                <button
-                  className={`widget-primary-action ${sessionActive ? 'is-stop' : ''}`}
-                  type="button"
-                  onClick={handlePrimaryAction}
-                >
-                  {actionLabel}
-                </button>
               </section>
             )}
           </aside>}

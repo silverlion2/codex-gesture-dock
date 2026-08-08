@@ -2,6 +2,8 @@ import {
   AlertCircle,
   Camera,
   CheckCircle2,
+  ContactRound,
+  FileText,
   FlipHorizontal2,
   Hand,
   RotateCcw,
@@ -11,6 +13,7 @@ import type { GestureViewState } from '../hooks/useGestureControl'
 import type { MonitorPhase } from '../hooks/usePoseMonitor'
 import type { CodeScannerPhase } from '../hooks/useCodeScanner'
 import type { CameraMode } from '../lib/cameraTools'
+import type { CameraFraming } from '../lib/mediaPreferences'
 import { statusLabel, type PostureStatus } from '../lib/posture'
 
 interface CompactCameraProps {
@@ -24,6 +27,7 @@ interface CompactCameraProps {
   gestureEnabled: boolean
   mode: CameraMode
   mirrored: boolean
+  framing: CameraFraming
   scanPhase: CodeScannerPhase
   onMirrorToggle: () => void
   onRecalibrate: () => void
@@ -40,29 +44,42 @@ export function CompactCamera({
   gestureEnabled,
   mode,
   mirrored,
+  framing,
   scanPhase,
   onMirrorToggle,
   onRecalibrate,
 }: CompactCameraProps) {
+  const fileMode = mode === 'ocr' || mode === 'card'
+
   return (
     <section
-      className={`compact-camera camera-mode-${mode} ${mirrored ? 'is-mirrored' : ''}`}
+      className={`compact-camera camera-mode-${mode} framing-${framing} ${mirrored ? 'is-mirrored' : ''}`}
       aria-label="摄像头预览"
     >
       <video ref={videoRef} autoPlay muted playsInline aria-label="实时摄像头画面" />
       <canvas ref={canvasRef} aria-hidden="true" hidden={mode !== 'monitor'} />
 
-      <button
-        className="mirror-camera-button"
-        type="button"
-        aria-pressed={mirrored}
-        onClick={onMirrorToggle}
-      >
-        <FlipHorizontal2 size={14} aria-hidden="true" />
-        {mirrored ? '镜像' : '原图'}
-      </button>
+      {!fileMode && (
+        <button
+          className="mirror-camera-button"
+          type="button"
+          aria-pressed={mirrored}
+          onClick={onMirrorToggle}
+        >
+          <FlipHorizontal2 size={14} aria-hidden="true" />
+          {mirrored ? '镜像' : '原图'}
+        </button>
+      )}
 
-      {phase === 'idle' && (
+      {fileMode && (
+        <div className="camera-placeholder file-ocr-placeholder">
+          {mode === 'card' ? <ContactRound size={31} aria-hidden="true" /> : <FileText size={31} aria-hidden="true" />}
+          <strong>{mode === 'card' ? '名片 OCR' : '文件 OCR'}</strong>
+          <span>{mode === 'card' ? '在下方导入名片照片，识别后确认联系人信息' : '在下方导入图像或 PDF，全程本机处理'}</span>
+        </div>
+      )}
+
+      {!fileMode && phase === 'idle' && (
         <div className="camera-placeholder">
           <Camera size={28} aria-hidden="true" />
           <strong>准备开始</strong>
@@ -70,14 +87,14 @@ export function CompactCamera({
         </div>
       )}
 
-      {phase === 'loading' && (
+      {!fileMode && phase === 'loading' && (
         <div className="camera-placeholder" role="status">
           <span className="small-spinner" aria-hidden="true" />
           <strong>正在准备本地模型</strong>
         </div>
       )}
 
-      {phase === 'error' && (
+      {!fileMode && phase === 'error' && (
         <div className="camera-placeholder camera-error" role="alert">
           <AlertCircle size={25} aria-hidden="true" />
           <strong>摄像头没有启动</strong>
@@ -85,7 +102,7 @@ export function CompactCamera({
         </div>
       )}
 
-      {phase === 'ended' && (
+      {!fileMode && phase === 'ended' && (
         <div className="camera-placeholder">
           <CheckCircle2 size={27} aria-hidden="true" />
           <strong>本次已结束</strong>
@@ -93,7 +110,7 @@ export function CompactCamera({
         </div>
       )}
 
-      {phase === 'calibrating' && (
+      {!fileMode && phase === 'calibrating' && (
         <div className="compact-calibration" role="status">
           <strong>{Math.max(1, Math.ceil(4 - calibrationProgress * 4))}</strong>
           <span>{status === 'away' ? '让头部和双肩进入画面' : '保持自然坐直'}</span>

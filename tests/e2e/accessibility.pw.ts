@@ -23,6 +23,14 @@ test('expanded dashboard meets automated accessibility rules', async ({ page }) 
   await expect(
     page.getByRole('region', { name: 'Codex Gesture Dock 控制面板' }),
   ).toBeVisible()
+  await expect(
+    page.getByRole('region', { name: '摄像头与麦克风控制' }),
+  ).toBeVisible()
+  await page.getByRole('button', { name: '完整' }).click()
+  await expect(page.getByRole('button', { name: '完整' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
   await expectAccessible(page)
 
   await page.getByRole('button', { name: '扫码' }).click()
@@ -31,6 +39,14 @@ test('expanded dashboard meets automated accessibility rules', async ({ page }) 
 
   await page.getByRole('button', { name: '文档' }).click()
   await expect(page.getByRole('region', { name: '文档扫描' })).toBeVisible()
+  await expectAccessible(page)
+
+  await page.getByRole('button', { name: '文字' }).click()
+  await expect(page.getByRole('region', { name: '文件 OCR' })).toBeVisible()
+  await expectAccessible(page)
+
+  await page.getByRole('button', { name: '名片' }).click()
+  await expect(page.getByRole('region', { name: '名片 OCR' })).toBeVisible()
   await expectAccessible(page)
 })
 
@@ -43,7 +59,14 @@ test('compact camera dock meets automated accessibility rules', async ({ page })
   ).toBeVisible()
   await expect(page.getByRole('button', { name: '打开完整控制面板' })).toBeVisible()
   await expect(page.getByRole('button', { name: '开始监测' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '打开麦克风' })).toBeVisible()
   await expectAccessible(page)
+
+  await page.locator('.mini-media-menu > summary').click()
+  await expect(page.getByRole('combobox', { name: '选择摄像头' })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: '选择麦克风' })).toBeVisible()
+  await expectAccessible(page)
+  await page.locator('.mini-media-menu > summary').click()
 
   await page.getByRole('button', { name: '扫码' }).click()
   await expect(page.getByRole('region', { name: '迷你扫码控制' })).toBeVisible()
@@ -51,6 +74,14 @@ test('compact camera dock meets automated accessibility rules', async ({ page })
 
   await page.getByRole('button', { name: '文档' }).click()
   await expect(page.getByRole('region', { name: '迷你文档拍摄控制' })).toBeVisible()
+  await expectAccessible(page)
+
+  await page.getByRole('button', { name: '文字' }).click()
+  await expect(page.getByRole('region', { name: '迷你文件 OCR 控制' })).toBeVisible()
+  await expectAccessible(page)
+
+  await page.getByRole('button', { name: '名片' }).click()
+  await expect(page.getByRole('region', { name: '迷你名片 OCR 控制' })).toBeVisible()
   await expectAccessible(page)
 })
 

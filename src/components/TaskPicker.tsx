@@ -662,7 +662,7 @@ export const TaskPicker = forwardRef<TaskPickerHandle, TaskPickerProps>(
             )}
 
             <footer className="task-picker-footer">
-              <span>☝ 上移 · ✊ 下移 · 👍 {workspaceView === 'files' ? '打开' : '选择'}</span>
+              <span>食指上移 · 握拳下移 · 拇指{workspaceView === 'files' ? '打开' : '选择'}</span>
               <button
                 type="button"
                 onClick={() => void (workspaceView === 'files' ? loadRecentFiles() : loadTasks(filter))}
@@ -708,7 +708,7 @@ export const TaskPicker = forwardRef<TaskPickerHandle, TaskPickerProps>(
                 </button>
               ))}
             </div>
-            <p className="task-gesture-help">☝ 上移 · ✊ 下移 · 👍 选择 · ✌ 返回</p>
+            <p className="task-gesture-help">食指上移 · 握拳下移 · 拇指选择 · 胜利手势返回</p>
           </div>
         )}
 
@@ -737,7 +737,7 @@ export const TaskPicker = forwardRef<TaskPickerHandle, TaskPickerProps>(
               )}
               {executing ? '正在执行' : '确认执行'}
             </button>
-            <p className="task-gesture-help">👍 确认执行 · ✌ 返回</p>
+            <p className="task-gesture-help">拇指确认执行 · 胜利手势返回</p>
           </div>
         )}
       </section>

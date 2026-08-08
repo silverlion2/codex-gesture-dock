@@ -1,15 +1,10 @@
-import { Check, Copy, Download, FileScan, ScanLine, ShieldCheck } from 'lucide-react'
+import { Check, Copy, ScanLine, ShieldCheck } from 'lucide-react'
 import { useState, type RefObject } from 'react'
 import type { CodeScannerPhase, CodeScanResult } from '../hooks/useCodeScanner'
-import {
-  captureVideoFrame,
-  downloadCapturedDocument,
-  type CameraMode,
-  type CapturedDocument,
-} from '../lib/cameraTools'
+import { DocumentToolPanel } from './DocumentToolPanel'
 
 interface CameraToolPanelProps {
-  mode: Exclude<CameraMode, 'monitor'>
+  mode: 'codes' | 'document'
   videoRef: RefObject<HTMLVideoElement | null>
   mirrored: boolean
   sessionReady: boolean
@@ -30,7 +25,6 @@ export function CameraToolPanel({
   onClearScan,
   onMessage,
 }: CameraToolPanelProps) {
-  const [capture, setCapture] = useState<CapturedDocument | null>(null)
   const [copied, setCopied] = useState(false)
 
   const copyResult = async () => {
@@ -41,17 +35,6 @@ export function CameraToolPanel({
       window.setTimeout(() => setCopied(false), 1_500)
     } catch {
       onMessage('无法写入剪贴板，请手动复制结果')
-    }
-  }
-
-  const takeSnapshot = () => {
-    const video = videoRef.current
-    if (!video) return
-    try {
-      setCapture(captureVideoFrame(video, mirrored))
-      onMessage('扫描图已在本机生成，确认后再保存')
-    } catch (caught) {
-      onMessage(caught instanceof Error ? caught.message : '文档扫描失败')
     }
   }
 
@@ -89,31 +72,5 @@ export function CameraToolPanel({
     )
   }
 
-  return (
-    <section className="camera-tool-panel document-tool-panel" aria-label="文档扫描">
-      <header>
-        <div><FileScan size={17} aria-hidden="true" /><strong>文档快照</strong></div>
-        <span><ShieldCheck size={13} aria-hidden="true" />不会自动保存</span>
-      </header>
-      {capture ? (
-        <div className="document-preview">
-          <img src={capture.dataUrl} alt="刚刚捕获的文档扫描预览" />
-          <div>
-            <button type="button" onClick={() => downloadCapturedDocument(capture)}>
-              <Download size={15} aria-hidden="true" />保存 PNG
-            </button>
-            <button type="button" onClick={() => setCapture(null)}>重新拍摄</button>
-          </div>
-        </div>
-      ) : (
-        <div className="document-capture-state">
-          <p>将纸张放进取景框并尽量保持平整、光线均匀。画面只在点击拍摄后进入内存。</p>
-          <button type="button" disabled={!sessionReady} onClick={takeSnapshot}>
-            <FileScan size={16} aria-hidden="true" />
-            {sessionReady ? '拍摄文档' : '请先启动摄像头'}
-          </button>
-        </div>
-      )}
-    </section>
-  )
+  return <DocumentToolPanel videoRef={videoRef} mirrored={mirrored} sessionReady={sessionReady} onMessage={onMessage} />
 }

@@ -114,4 +114,35 @@ describe('usePoseMonitor camera loop', () => {
     unmount()
     expect(mediaPipe.close).toHaveBeenCalledTimes(1)
   })
+
+  it('requests a selected camera by exact device id', async () => {
+    const video = document.createElement('video')
+    Object.defineProperties(video, {
+      play: { configurable: true, value: vi.fn(async () => undefined) },
+      readyState: {
+        configurable: true,
+        get: () => HTMLMediaElement.HAVE_NOTHING,
+      },
+    })
+    const { result } = renderHook(() =>
+      usePoseMonitor({
+        videoRef: { current: video },
+        canvasRef: { current: null },
+        settings,
+        videoDeviceId: 'front-camera',
+        onReminder: vi.fn(),
+      }),
+    )
+
+    await act(async () => result.current.startSession())
+
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
+      video: {
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        deviceId: { exact: 'front-camera' },
+      },
+      audio: false,
+    })
+  })
 })

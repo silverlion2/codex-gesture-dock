@@ -1,4 +1,4 @@
-import { FileScan, ScanLine, UserRoundCheck } from 'lucide-react'
+import { ContactRound, FileScan, FileText, ScanLine, UserRoundCheck } from 'lucide-react'
 import type { CameraMode } from '../lib/cameraTools'
 
 interface CameraModeSwitcherProps {
@@ -9,6 +9,8 @@ const modes = [
   { id: 'monitor', label: '姿态', icon: UserRoundCheck },
   { id: 'codes', label: '扫码', icon: ScanLine },
   { id: 'document', label: '文档', icon: FileScan },
+  { id: 'ocr', label: '文字', icon: FileText },
+  { id: 'card', label: '名片', icon: ContactRound },
 ] as const
 
 export function CameraModeSwitcher({ mode, onChange }: CameraModeSwitcherProps) {

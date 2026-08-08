@@ -1,4 +1,13 @@
-import { Hand, Mic, Radio } from 'lucide-react'
+import {
+  CheckCircle2,
+  Hand,
+  ListTodo,
+  MessageCircle,
+  Mic,
+  PanelRightOpen,
+  Radio,
+  TerminalSquare,
+} from 'lucide-react'
 import type { GestureViewState } from '../hooks/useGestureControl'
 import {
   getGestureBindings,
@@ -25,6 +34,16 @@ function liveLabel(
   if (gesture.awaitingNeutral) return '请松手以继续'
   if (gesture.binding) return gesture.binding.actionLabel
   return '等待手势'
+}
+
+function GestureActionIcon({ name }: { name: GestureName }) {
+  const props = { size: 18, strokeWidth: 1.8, 'aria-hidden': true as const }
+  if (name === 'Victory') return <MessageCircle {...props} />
+  if (name === 'Pointing_Up') return <Mic {...props} />
+  if (name === 'Open_Palm') return <ListTodo {...props} />
+  if (name === 'Thumb_Up') return <CheckCircle2 {...props} />
+  if (name === 'ILoveYou') return <TerminalSquare {...props} />
+  return <PanelRightOpen {...props} />
 }
 
 export function GestureBook({
@@ -65,7 +84,7 @@ export function GestureBook({
               key={name}
             >
               <span className="gesture-number">{String(index + 1).padStart(2, '0')}</span>
-              <b aria-hidden="true">{binding.symbol}</b>
+              <b aria-hidden="true"><GestureActionIcon name={name} /></b>
               <div>
                 <strong>{binding.actionLabel}</strong>
                 <small>{binding.gestureLabel}</small>

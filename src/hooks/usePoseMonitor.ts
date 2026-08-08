@@ -47,6 +47,7 @@ interface UsePoseMonitorOptions {
   videoRef: RefObject<HTMLVideoElement | null>
   canvasRef: RefObject<HTMLCanvasElement | null>
   settings: ReminderSettings
+  videoDeviceId?: string
   onReminder: (message: string) => void
 }
 
@@ -71,6 +72,7 @@ export function usePoseMonitor({
   videoRef,
   canvasRef,
   settings,
+  videoDeviceId = '',
   onReminder,
 }: UsePoseMonitorOptions) {
   const [phase, setPhaseState] = useState<MonitorPhase>('idle')
@@ -296,27 +298,17 @@ export function usePoseMonitor({
       modelAssetPath: modelPath,
     }
 
-    let landmarker: PoseLandmarker
-    try {
-      landmarker = await PoseLandmarker.createFromOptions(vision, {
-        baseOptions: { ...baseOptions, delegate: 'GPU' },
-        runningMode: 'VIDEO',
-        numPoses: 1,
-        minPoseDetectionConfidence: 0.55,
-        minPosePresenceConfidence: 0.5,
-        minTrackingConfidence: 0.55,
-      })
-    } catch {
-      if (disposedRef.current) throw new DOMException('监测已取消', 'AbortError')
-      landmarker = await PoseLandmarker.createFromOptions(vision, {
-        baseOptions,
-        runningMode: 'VIDEO',
-        numPoses: 1,
-        minPoseDetectionConfidence: 0.55,
-        minPosePresenceConfidence: 0.5,
-        minTrackingConfidence: 0.55,
-      })
-    }
+    // MediaPipe's GPU delegate can stay pending indefinitely on some Windows
+    // graphics drivers. The CPU path is fast enough for our throttled posture
+    // sampling and, more importantly, always settles so the camera can start.
+    const landmarker = await PoseLandmarker.createFromOptions(vision, {
+      baseOptions,
+      runningMode: 'VIDEO',
+      numPoses: 1,
+      minPoseDetectionConfidence: 0.55,
+      minPosePresenceConfidence: 0.5,
+      minTrackingConfidence: 0.55,
+    })
 
     if (disposedRef.current) {
       landmarker.close()
@@ -326,9 +318,17 @@ export function usePoseMonitor({
     return landmarker
   }, [])
 
-  const startSession = useCallback(async () => {
+  const startSession = useCallback(async (deviceOverride?: string) => {
     const requestId = ++sessionRequestRef.current
+    const requestedDeviceId = deviceOverride ?? videoDeviceId
     let acquiredStream: MediaStream | null = null
+    if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
+    frameRef.current = null
+    streamRef.current?.getTracks().forEach((track) => track.stop())
+    streamRef.current = null
+    const currentVideo = videoRef.current
+    if (currentVideo) currentVideo.srcObject = null
+    clearCanvas()
     setError('')
     setPhase('loading')
     setSessionSeconds(0)
@@ -345,7 +345,9 @@ export function usePoseMonitor({
         video: {
           width: { ideal: 1280 },
           height: { ideal: 720 },
-          facingMode: 'user',
+          ...(requestedDeviceId
+            ? { deviceId: { exact: requestedDeviceId } }
+            : { facingMode: 'user' }),
         },
         audio: false,
       })
@@ -378,13 +380,25 @@ export function usePoseMonitor({
       const message =
         caught instanceof DOMException && caught.name === 'NotAllowedError'
           ? '摄像头权限被拒绝。请在浏览器地址栏重新允许访问。'
+          : caught instanceof DOMException &&
+              (caught.name === 'NotFoundError' ||
+                caught.name === 'OverconstrainedError')
+            ? '所选摄像头不可用，请选择其他设备后重试。'
           : caught instanceof Error
             ? caught.message
             : '无法启动摄像头，请检查设备是否被其他应用占用。'
       setError(message)
       setPhase('error')
     }
-  }, [loadLandmarker, predict, resetCalibration, setPhase, videoRef])
+  }, [
+    clearCanvas,
+    loadLandmarker,
+    predict,
+    resetCalibration,
+    setPhase,
+    videoDeviceId,
+    videoRef,
+  ])
 
   const stopSession = useCallback(() => {
     sessionRequestRef.current += 1

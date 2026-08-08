@@ -16,5 +16,11 @@ describe('CameraModeSwitcher', () => {
     expect(onChange).toHaveBeenCalledWith('codes')
     fireEvent.click(screen.getByRole('button', { name: '文档' }))
     expect(onChange).toHaveBeenCalledWith('document')
+
+    fireEvent.click(screen.getByRole('button', { name: '文字' }))
+    expect(onChange).toHaveBeenCalledWith('ocr')
+
+    fireEvent.click(screen.getByRole('button', { name: '名片' }))
+    expect(onChange).toHaveBeenCalledWith('card')
   })
 })

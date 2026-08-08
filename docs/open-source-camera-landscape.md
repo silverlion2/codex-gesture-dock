@@ -44,9 +44,23 @@ Google 的 [MediaPipe Web Gesture Recognizer 指南](https://developers.google.c
 | [ZXing Browser](https://github.com/zxing-js/browser) | 采用。MIT、TypeScript、可直接解码现有 video 元素，并覆盖 QR、Data Matrix 与常见一维码；只在扫码模式动态加载。 |
 | [html5-qrcode](https://github.com/mebjas/html5-qrcode) | 暂不采用。功能完整且自带 UI，但项目声明处于维护模式；本项目已有摄像头生命周期和界面系统。 |
 | [jscanify](https://github.com/puffinsoft/jscanify) | 后续候选。MIT，可用 OpenCV.js 标出并透视提取纸张；当前先交付零额外 WASM 的明确拍摄/预览/保存闭环。 |
-| [Tesseract.js](https://github.com/naptha/tesseract.js) | 后续候选。Apache-2.0 且支持浏览器 OCR，但语言数据体积、首次加载来源和识别性能需要先完成离线打包设计。 |
+| [Tesseract.js](https://github.com/naptha/tesseract.js) | 已采用。Apache-2.0；worker、WASM core 与英/简中/繁中语言数据随应用离线打包，只在文件或名片 OCR 时动态加载。 |
+| [PDF.js](https://github.com/mozilla/pdf.js) | 已采用。Apache-2.0；优先读取 PDF 文本层，对扫描页本地渲染后交给 Tesseract.js。 |
 
-第一阶段因此包含姿态、QR/条码、文档快照和镜像切换。OCR、自动纸张边缘矫正、背景移除与虚拟摄像头留在后续阶段，避免一次引入多个高负载推理管线。
+当前阶段包含姿态、QR/条码、文档快照、文件 OCR、名片 OCR 和镜像切换。自动纸张边缘矫正、背景移除与虚拟摄像头仍留在后续阶段，避免同时运行多个高负载推理管线。
+
+### 悬浮窗与媒体控制复查
+
+| 项目 | 借鉴 / 决策 |
+| --- | --- |
+| [Flobro](https://github.com/flobro/flobro-app) | 借鉴无边框置顶内容窗和 hover 后出现的轻量工具条；本项目据此让运行中的迷你控制条退场，同时保留键盘 `focus-within` 和菜单打开状态。 |
+| [AirPlayServer](https://github.com/xenos1337/AirPlayServer) | 借鉴恢复前一窗口位置/尺寸、保持可见工作区和 hover 控件；本项目分别保存迷你与展开边界，展开窗口保持安全最小尺寸。 |
+| [OpenScreen](https://github.com/getopenscreen/openscreen) | 活跃 MIT 社区延续版提供可拖动 webcam PiP、镜像和形状选项；作为 Electron 摄像头叠加参考，不引入其录屏时间线。 |
+| [tCamView](https://github.com/augamvio/tCamView) | 填满/适应、翻转、透明度和设备/分辨率选择是有效摄像头控制参考；代码为 GPLv3 且较旧，本项目只独立实现交互概念。 |
+| [Posture Guardian](https://github.com/marisombra-dev/Posture-Guardian) | 系统级坐姿覆盖提醒与本项目健康场景相近，但仓库规模小且许可不明确，只作为提醒概念参考。 |
+| [Microsoft Windows-Camera](https://github.com/microsoft/Windows-Camera) | 后续若需要 Windows Studio Effects、曝光/对焦或原生相机状态，优先参考官方 MIT 样例；当前 Web MediaDevices 已足够。 |
+
+没有发现一个可直接替换本项目、同时覆盖小型 Windows 置顶 Dock、姿态/手势、扫码/OCR、文档和隐私音频控制的成熟仓库。因此采用“专用项目提取交互模式、现有 MediaPipe/ZXing/Tesseract 管线继续保留”的组合方案。本次实现设备选择、填满/完整取景、明确的麦克风开关/本机电平，以及分别记忆迷你/展开窗口边界；不复制 GPL 或许可不明确的源码。
 
 ## 技术与产品原则
 

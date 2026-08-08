@@ -1,13 +1,15 @@
 import {
   Check,
+  ContactRound,
   Copy,
   Download,
   FileScan,
+  FileText,
   Play,
   ScanLine,
   Square,
 } from 'lucide-react'
-import { useState, type RefObject } from 'react'
+import { useState, type ReactNode, type RefObject } from 'react'
 import type { CodeScannerPhase, CodeScanResult } from '../hooks/useCodeScanner'
 import type { MonitorPhase } from '../hooks/usePoseMonitor'
 import {
@@ -29,6 +31,7 @@ interface MiniCameraControlsProps {
   scanPhase: CodeScannerPhase
   scanResult: CodeScanResult | null
   scanError: string
+  mediaControls: ReactNode
   onClearScan: () => void
   onSessionToggle: () => void
   onMessage: (message: string) => void
@@ -65,6 +68,7 @@ export function MiniCameraControls({
   scanPhase,
   scanResult,
   scanError,
+  mediaControls,
   onClearScan,
   onSessionToggle,
   onMessage,
@@ -107,18 +111,21 @@ export function MiniCameraControls({
             <small>{monitorSummary(phase, status)}</small>
           </div>
         </div>
-        <button
-          className={`mini-camera-primary ${sessionActive ? 'is-stop' : ''}`}
-          type="button"
-          onClick={onSessionToggle}
-        >
-          {sessionActive ? (
-            <Square size={13} aria-hidden="true" />
-          ) : (
-            <Play size={14} aria-hidden="true" />
-          )}
-          {actionLabel}
-        </button>
+        <div className="mini-control-actions">
+          <button
+            className={`mini-camera-primary ${sessionActive ? 'is-stop' : ''}`}
+            type="button"
+            onClick={onSessionToggle}
+          >
+            {sessionActive ? (
+              <Square size={13} aria-hidden="true" />
+            ) : (
+              <Play size={14} aria-hidden="true" />
+            )}
+            {actionLabel}
+          </button>
+          {mediaControls}
+        </div>
       </section>
     )
   }
@@ -137,25 +144,44 @@ export function MiniCameraControls({
             </small>
           </div>
         </div>
-        {scanResult ? (
-          <div className="mini-tool-actions">
-            <button type="button" aria-label="复制扫描结果" onClick={() => void copyScanResult()}>
-              {copied ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
+        <div className="mini-control-actions">
+          {scanResult ? (
+            <div className="mini-tool-actions">
+              <button type="button" aria-label="复制扫描结果" onClick={() => void copyScanResult()}>
+                {copied ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
+              </button>
+              <button type="button" aria-label="继续扫码" onClick={onClearScan}>
+                <ScanLine size={15} aria-hidden="true" />
+              </button>
+            </div>
+          ) : (
+            <button
+              className={`mini-camera-primary ${sessionActive ? 'is-stop' : ''}`}
+              type="button"
+              onClick={onSessionToggle}
+            >
+              {sessionActive ? <Square size={13} aria-hidden="true" /> : <Play size={14} aria-hidden="true" />}
+              {sessionActive ? '停止' : '启动'}
             </button>
-            <button type="button" aria-label="继续扫码" onClick={onClearScan}>
-              <ScanLine size={15} aria-hidden="true" />
-            </button>
+          )}
+          {mediaControls}
+        </div>
+      </section>
+    )
+  }
+
+  if (mode === 'ocr' || mode === 'card') {
+    const Icon = mode === 'card' ? ContactRound : FileText
+    return (
+      <section className="mini-camera-controls" aria-label={mode === 'card' ? '迷你名片 OCR 控制' : '迷你文件 OCR 控制'}>
+        <div className="mini-tool-reading">
+          <Icon size={17} aria-hidden="true" />
+          <div>
+            <strong>{mode === 'card' ? '名片 OCR' : '文件 OCR'}</strong>
+            <small>点击右上角展开，在完整面板中选择文件</small>
           </div>
-        ) : (
-          <button
-            className={`mini-camera-primary ${sessionActive ? 'is-stop' : ''}`}
-            type="button"
-            onClick={onSessionToggle}
-          >
-            {sessionActive ? <Square size={13} aria-hidden="true" /> : <Play size={14} aria-hidden="true" />}
-            {sessionActive ? '停止' : '启动'}
-          </button>
-        )}
+        </div>
+        <div className="mini-control-actions">{mediaControls}</div>
       </section>
     )
   }
@@ -173,30 +199,33 @@ export function MiniCameraControls({
           <small>{capture ? capture.filename : sessionReady ? '对齐纸张后拍摄' : '先启动摄像头'}</small>
         </div>
       </div>
-      {capture ? (
-        <div className="mini-tool-actions">
-          <button
-            type="button"
-            aria-label="保存文档 PNG"
-            onClick={() => downloadCapturedDocument(capture)}
-          >
-            <Download size={15} aria-hidden="true" />
+      <div className="mini-control-actions">
+        {capture ? (
+          <div className="mini-tool-actions">
+            <button
+              type="button"
+              aria-label="保存文档 PNG"
+              onClick={() => downloadCapturedDocument(capture)}
+            >
+              <Download size={15} aria-hidden="true" />
+            </button>
+            <button type="button" aria-label="重新拍摄文档" onClick={() => setCapture(null)}>
+              <FileScan size={15} aria-hidden="true" />
+            </button>
+          </div>
+        ) : sessionReady ? (
+          <button className="mini-camera-primary" type="button" onClick={takeSnapshot}>
+            <FileScan size={14} aria-hidden="true" />
+            拍摄
           </button>
-          <button type="button" aria-label="重新拍摄文档" onClick={() => setCapture(null)}>
-            <FileScan size={15} aria-hidden="true" />
+        ) : (
+          <button className="mini-camera-primary" type="button" onClick={onSessionToggle}>
+            <Play size={14} aria-hidden="true" />
+            启动
           </button>
-        </div>
-      ) : sessionReady ? (
-        <button className="mini-camera-primary" type="button" onClick={takeSnapshot}>
-          <FileScan size={14} aria-hidden="true" />
-          拍摄
-        </button>
-      ) : (
-        <button className="mini-camera-primary" type="button" onClick={onSessionToggle}>
-          <Play size={14} aria-hidden="true" />
-          启动
-        </button>
-      )}
+        )}
+        {mediaControls}
+      </div>
     </section>
   )
 }

@@ -23,6 +23,10 @@ const {
   normalizeCodexNotification,
 } = require('./codex-integration.cjs')
 const { WindowsControlCore } = require('./windows-control.cjs')
+const {
+  constrainBounds,
+  parseWidgetWindowState,
+} = require('./window-bounds.cjs')
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -38,8 +42,9 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 const COLLAPSED_SIZE = { width: 348, height: 360 }
-const EXPANDED_SIZE = { width: 700, height: 680 }
-const TASK_PICKER_SIZE = { width: 560, height: 680 }
+const EXPANDED_SIZE = { width: 1120, height: 760 }
+const EXPANDED_MIN_SIZE = { width: 980, height: 760 }
+const TASK_PICKER_SIZE = { width: 620, height: 720 }
 const SCREEN_GAP = 14
 const APP_HOST = 'codex-gesture-dock'
 const APP_URL_PREFIX = `app://${APP_HOST}/`
@@ -64,6 +69,8 @@ let widgetWindow = null
 let taskPickerWindow = null
 let isQuitting = false
 let expanded = false
+let widgetWindowState = { collapsed: null, expanded: null }
+let widgetWindowStateTimer = null
 let lastCodexActionAt = 0
 let lastWindowsActionAt = 0
 let boundCodexTaskId = ''
@@ -358,6 +365,57 @@ function getInitialBounds(size) {
   }
 }
 
+function getWidgetWindowStatePath() {
+  return path.join(app.getPath('userData'), 'widget-window-state.json')
+}
+
+function loadWidgetWindowState() {
+  try {
+    widgetWindowState = parseWidgetWindowState(
+      JSON.parse(fs.readFileSync(getWidgetWindowStatePath(), 'utf8')),
+    )
+  } catch {
+    widgetWindowState = { collapsed: null, expanded: null }
+  }
+}
+
+function persistWidgetWindowState() {
+  if (widgetWindowStateTimer !== null) {
+    clearTimeout(widgetWindowStateTimer)
+    widgetWindowStateTimer = null
+  }
+  try {
+    const targetPath = getWidgetWindowStatePath()
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true })
+    fs.writeFileSync(targetPath, JSON.stringify(widgetWindowState, null, 2), 'utf8')
+  } catch (error) {
+    console.warn('Widget window state could not be persisted:', error)
+  }
+}
+
+function scheduleWidgetWindowStatePersist() {
+  if (widgetWindowStateTimer !== null) clearTimeout(widgetWindowStateTimer)
+  widgetWindowStateTimer = setTimeout(persistWidgetWindowState, 180)
+}
+
+function rememberCurrentWidgetBounds() {
+  if (!widgetWindow || widgetWindow.isDestroyed()) return
+  const mode = expanded ? 'expanded' : 'collapsed'
+  widgetWindowState[mode] = widgetWindow.getBounds()
+  scheduleWidgetWindowStatePersist()
+}
+
+function getStoredWidgetBounds(mode) {
+  const stored = widgetWindowState[mode]
+  if (!stored) return null
+  const { workArea } = screen.getDisplayMatching(stored)
+  return constrainBounds(stored, workArea, {
+    defaultSize: mode === 'expanded' ? EXPANDED_SIZE : COLLAPSED_SIZE,
+    minSize: mode === 'expanded' ? EXPANDED_MIN_SIZE : COLLAPSED_SIZE,
+    fixedSize: mode === 'collapsed',
+  })
+}
+
 function getAnchoredBounds(size) {
   if (!widgetWindow) return getInitialBounds(size)
   const current = widgetWindow.getBounds()
@@ -382,9 +440,18 @@ function getAnchoredBounds(size) {
 
 function setExpanded(nextExpanded) {
   if (!widgetWindow || widgetWindow.isDestroyed()) return false
-  expanded = Boolean(nextExpanded)
+  const next = Boolean(nextExpanded)
+  if (next === expanded) return expanded
+  rememberCurrentWidgetBounds()
+  expanded = next
   const size = expanded ? EXPANDED_SIZE : COLLAPSED_SIZE
-  widgetWindow.setBounds(getAnchoredBounds(size), true)
+  const storedBounds = getStoredWidgetBounds(expanded ? 'expanded' : 'collapsed')
+  widgetWindow.setMinimumSize(
+    expanded ? EXPANDED_MIN_SIZE.width : COLLAPSED_SIZE.width,
+    expanded ? EXPANDED_MIN_SIZE.height : COLLAPSED_SIZE.height,
+  )
+  widgetWindow.setResizable(expanded)
+  widgetWindow.setBounds(storedBounds ?? getAnchoredBounds(size), true)
   widgetWindow.webContents.send('widget:state-changed', expanded)
   return expanded
 }
@@ -992,12 +1059,14 @@ function registerAppProtocol() {
 
 function configurePermissions() {
   const isOwnContent = (webContents) => webContents === widgetWindow?.webContents
+  const isAllowedMediaType = (mediaType) =>
+    !mediaType || mediaType === 'video' || mediaType === 'audio'
 
   session.defaultSession.setPermissionCheckHandler(
     (webContents, permission, _origin, details) =>
       isOwnContent(webContents) &&
       permission === 'media' &&
-      (!details.mediaType || details.mediaType === 'video'),
+      isAllowedMediaType(details.mediaType),
   )
 
   session.defaultSession.setPermissionRequestHandler(
@@ -1009,15 +1078,16 @@ function configurePermissions() {
         isOwnContent(webContents) &&
           permission === 'media' &&
           mediaTypes.length > 0 &&
-          mediaTypes.every((mediaType) => mediaType === 'video'),
+          mediaTypes.every(isAllowedMediaType),
       )
     },
   )
 }
 
 function createWidgetWindow() {
+  loadWidgetWindowState()
   widgetWindow = new BrowserWindow({
-    ...getInitialBounds(COLLAPSED_SIZE),
+    ...(getStoredWidgetBounds('collapsed') ?? getInitialBounds(COLLAPSED_SIZE)),
     show: false,
     frame: false,
     transparent: true,
@@ -1044,6 +1114,12 @@ function createWidgetWindow() {
 
   widgetWindow.setAlwaysOnTop(true, 'floating')
   widgetWindow.setMenuBarVisibility(false)
+  widgetWindow.on('move', rememberCurrentWidgetBounds)
+  widgetWindow.on('resize', rememberCurrentWidgetBounds)
+  widgetWindow.on('close', () => {
+    rememberCurrentWidgetBounds()
+    persistWidgetWindowState()
+  })
   attachRendererRecovery(widgetWindow, 'Widget', true)
   widgetWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   widgetWindow.webContents.on('will-navigate', (event, url) => {
