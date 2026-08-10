@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="650" viewBox="0 0 1000 650">
+  <rect width="1000" height="650" fill="#ffffff"/>
+  <rect x="30" y="30" width="940" height="590" fill="none" stroke="#202020" stroke-width="8"/>
+  <text x="95" y="180" font-family="Arial, sans-serif" font-size="68" font-weight="700">SECOND OCR FILE</text>
+  <text x="95" y="310" font-family="Arial, sans-serif" font-size="54">Batch processing works.</text>
+  <text x="95" y="430" font-family="Arial, sans-serif" font-size="54">Reference: BATCH-2026</text>
+</svg>

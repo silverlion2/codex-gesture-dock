@@ -11,13 +11,15 @@ import {
   ShieldCheck,
   X,
 } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { CodexApprovalPanel } from './components/CodexApprovalPanel'
 import { CodexIntegrationPanel } from './components/CodexIntegrationPanel'
 import { CompactCamera } from './components/CompactCamera'
 import { CameraModeSwitcher } from './components/CameraModeSwitcher'
-import { CameraToolPanel } from './components/CameraToolPanel'
 import { GestureBook } from './components/GestureBook'
+import { FacePrivacyPanel } from './components/FacePrivacyPanel'
+import { BackgroundToolPanel } from './components/BackgroundToolPanel'
+import { ObjectDetectionPanel } from './components/ObjectDetectionPanel'
 import {
   CompactMediaControls,
   MediaInputPanel,
@@ -57,6 +59,9 @@ import {
   saveMediaPreferences,
   type CameraFraming,
 } from './lib/mediaPreferences'
+
+const CameraToolPanel = lazy(() => import('./components/CameraToolPanel'))
+const ImageComparisonPanel = lazy(() => import('./components/ImageComparisonPanel').then((module) => ({ default: module.ImageComparisonPanel })))
 
 const initialSettings: ReminderSettings = {
   postureEnabled: true,
@@ -659,7 +664,7 @@ function WidgetApp() {
               <CameraModeSwitcher mode={cameraMode} onChange={setCameraMode} />
             </header>
 
-            {expanded && cameraMode !== 'ocr' && cameraMode !== 'card' ? (
+            {expanded && cameraMode !== 'ocr' && cameraMode !== 'card' && cameraMode !== 'privacy' && cameraMode !== 'background' && cameraMode !== 'compare' ? (
               <MediaInputPanel {...mediaControlProps} />
             ) : null}
 
@@ -745,17 +750,34 @@ function WidgetApp() {
 
               </>
             ) : cameraMode === 'codes' || cameraMode === 'document' ? (
-              <CameraToolPanel
-                mode={cameraMode}
+              <Suspense fallback={<div className="tool-empty-state" role="status">正在加载本机扫描工具</div>}>
+                <CameraToolPanel
+                  mode={cameraMode}
+                  videoRef={videoRef}
+                  mirrored={mediaPreferences.cameraMirrored}
+                  sessionReady={monitor.phase === 'monitoring'}
+                  scanPhase={codeScanner.phase}
+                  scanResult={codeScanner.result}
+                  scanError={codeScanner.error}
+                  onClearScan={codeScanner.clearResult}
+                  onMessage={showReminder}
+                />
+              </Suspense>
+            ) : cameraMode === 'privacy' ? (
+              <FacePrivacyPanel onMessage={showReminder} />
+            ) : cameraMode === 'background' ? (
+              <BackgroundToolPanel onMessage={showReminder} />
+            ) : cameraMode === 'objects' ? (
+              <ObjectDetectionPanel
                 videoRef={videoRef}
                 mirrored={mediaPreferences.cameraMirrored}
                 sessionReady={monitor.phase === 'monitoring'}
-                scanPhase={codeScanner.phase}
-                scanResult={codeScanner.result}
-                scanError={codeScanner.error}
-                onClearScan={codeScanner.clearResult}
                 onMessage={showReminder}
               />
+            ) : cameraMode === 'compare' ? (
+              <Suspense fallback={<div className="tool-empty-state" role="status">正在加载本机图片对比工具</div>}>
+                <ImageComparisonPanel onMessage={showReminder} />
+              </Suspense>
             ) : (
               <OcrToolPanel
                 key={cameraMode}

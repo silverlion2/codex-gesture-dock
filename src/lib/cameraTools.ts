@@ -1,4 +1,4 @@
-export type CameraMode = 'monitor' | 'codes' | 'document' | 'ocr' | 'card'
+export type CameraMode = 'monitor' | 'codes' | 'document' | 'ocr' | 'card' | 'privacy' | 'background' | 'objects' | 'compare'
 
 export interface CapturedDocument {
   dataUrl: string

@@ -1,4 +1,4 @@
-import { ContactRound, FileScan, FileText, ScanLine, UserRoundCheck } from 'lucide-react'
+import { ContactRound, EyeOff, FileScan, FileText, GitCompare, ImageMinus, ScanLine, ScanSearch, UserRoundCheck } from 'lucide-react'
 import type { CameraMode } from '../lib/cameraTools'
 
 interface CameraModeSwitcherProps {
@@ -11,6 +11,10 @@ const modes = [
   { id: 'document', label: '文档', icon: FileScan },
   { id: 'ocr', label: '文字', icon: FileText },
   { id: 'card', label: '名片', icon: ContactRound },
+  { id: 'privacy', label: '隐私', icon: EyeOff },
+  { id: 'background', label: '背景', icon: ImageMinus },
+  { id: 'objects', label: '物体', icon: ScanSearch },
+  { id: 'compare', label: '对比', icon: GitCompare },
 ] as const
 
 export function CameraModeSwitcher({ mode, onChange }: CameraModeSwitcherProps) {
@@ -22,6 +26,7 @@ export function CameraModeSwitcher({ mode, onChange }: CameraModeSwitcherProps) 
           type="button"
           className={mode === id ? 'is-active' : ''}
           aria-pressed={mode === id}
+          title={label}
           onClick={() => onChange(id)}
         >
           <Icon size={13} aria-hidden="true" />

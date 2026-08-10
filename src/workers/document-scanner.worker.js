@@ -83,6 +83,24 @@ function insetCorners(width, height) {
   }
 }
 
+function manualCorners(corners, width, height) {
+  const values = corners && [corners.topLeft, corners.topRight, corners.bottomRight, corners.bottomLeft]
+  if (!values || values.some((point) => !Number.isFinite(point?.x) || !Number.isFinite(point?.y))) {
+    throw new Error('手动文档角点无效')
+  }
+  const ordered = orderCorners(values.map((point) => ({
+    x: Math.max(0, Math.min(width - 1, point.x)),
+    y: Math.max(0, Math.min(height - 1, point.y)),
+  })))
+  const polygon = [ordered.topLeft, ordered.topRight, ordered.bottomRight, ordered.bottomLeft]
+  const area = Math.abs(polygon.reduce((sum, point, index) => {
+    const next = polygon[(index + 1) % polygon.length]
+    return sum + point.x * next.y - next.x * point.y
+  }, 0) / 2)
+  if (area < width * height * 0.02) throw new Error('所选文档区域过小，请拉开四个角点')
+  return ordered
+}
+
 function findCorners(cv, source) {
   const detectionScale = Math.min(1, 1200 / Math.max(source.cols, source.rows))
   const resized = new cv.Mat()
@@ -181,7 +199,13 @@ async function processScan(message) {
   let destinationPoints = null
 
   try {
-    const detection = findCorners(cv, source)
+    const detection = message.corners
+      ? {
+          corners: manualCorners(message.corners, source.cols, source.rows),
+          autoDetected: false,
+          manualAdjusted: true,
+        }
+      : { ...findCorners(cv, source), manualAdjusted: false }
     const { width, height } = outputSize(detection.corners)
     const { topLeft, topRight, bottomRight, bottomLeft } = detection.corners
     sourcePoints = cv.matFromArray(4, 1, cv.CV_32FC2, [
@@ -215,6 +239,8 @@ async function processScan(message) {
       width,
       height,
       autoDetected: detection.autoDetected,
+      manualAdjusted: detection.manualAdjusted,
+      corners: detection.corners,
       pixels: output.buffer,
     }, [output.buffer])
   } finally {

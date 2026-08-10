@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760">
+  <rect width="1200" height="760" fill="#ffffff"/>
+  <g fill="#101010" font-family="Arial, sans-serif">
+    <text x="85" y="135" font-size="54" font-weight="700">CONFIDENTIAL CONTACT</text>
+    <text x="85" y="260" font-size="42">Email: billing@northwind.test</text>
+    <text x="85" y="350" font-size="42">Phone: +1 (415) 555-2671</text>
+    <text x="85" y="440" font-size="42">Order: INV-2026-100</text>
+    <text x="85" y="570" font-size="28">Review before sharing this document.</text>
+  </g>
+</svg>

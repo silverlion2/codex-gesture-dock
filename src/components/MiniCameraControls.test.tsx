@@ -78,4 +78,12 @@ describe('MiniCameraControls', () => {
     expect(screen.getByText('点击右上角展开，在完整面板中选择文件')).toBeTruthy()
     expect(props.onSessionToggle).not.toHaveBeenCalled()
   })
+
+  it('directs compact image-comparison users to the full panel without starting the camera', () => {
+    const props = renderControls({ mode: 'compare' })
+
+    expect(screen.getByText('图片对比')).toBeTruthy()
+    expect(screen.getByRole('region', { name: '迷你图片对比控制' })).toBeTruthy()
+    expect(props.onSessionToggle).not.toHaveBeenCalled()
+  })
 })

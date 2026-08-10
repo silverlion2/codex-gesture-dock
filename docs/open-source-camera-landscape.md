@@ -43,11 +43,26 @@ Google 的 [MediaPipe Web Gesture Recognizer 指南](https://developers.google.c
 | --- | --- |
 | [ZXing Browser](https://github.com/zxing-js/browser) | 采用。MIT、TypeScript、可直接解码现有 video 元素，并覆盖 QR、Data Matrix 与常见一维码；只在扫码模式动态加载。 |
 | [html5-qrcode](https://github.com/mebjas/html5-qrcode) | 暂不采用。功能完整且自带 UI，但项目声明处于维护模式；本项目已有摄像头生命周期和界面系统。 |
-| [jscanify](https://github.com/puffinsoft/jscanify) | 后续候选。MIT，可用 OpenCV.js 标出并透视提取纸张；当前先交付零额外 WASM 的明确拍摄/预览/保存闭环。 |
+| [jscanify](https://github.com/puffinsoft/jscanify) | 已评估但未直接采用。其纸张检测、透视矫正和滤镜方向与需求吻合；当前 npm 默认依赖还会带入面向 Node 的 `canvas` / `jsdom` 路径，不适合本 Electron renderer 的轻量、严格 CSP 资产边界。 |
+| [OpenCV.js](https://github.com/opencv/opencv) | 已采用。Canny、轮廓筛选、透视变换和自适应阈值在同源隔离 worker 中运行；worker 复用运行时，renderer 继续只允许 `wasm-unsafe-eval` 而不开放一般 `unsafe-eval`。 |
+| [MediaPipe Samples Web](https://github.com/google-ai-edge/mediapipe-samples-web) / [BlazeFace](https://github.com/google-ai-edge/mediapipe/blob/master/docs/solutions/face_detection.md) | 已采用人脸检测任务方向。复用现有 `@mediapipe/tasks-vision` 与本地 WASM，只新增官方 short-range 模型；检测框必须人工复核，最终效果由 canvas 烧录，不做身份识别。 |
+| [exifr](https://github.com/MikeKovarik/exifr) | 已采用照片隐私元数据检查。MIT、零依赖、支持浏览器 `File`/`Blob` 与按标签解析；当前只对 JPEG/PNG 挑选常见 EXIF/GPS 隐私字段，不把 WebP/BMP 或未知元数据误报为已检查。所有支持的输入仍通过 canvas 重新编码 PNG，源元数据不复制。 |
+| [MediaPipe Image Segmenter](https://developers.google.com/edge/mediapipe/solutions/vision/image_segmenter/web_js) / [SelfieSegmenter](https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite) | 已采用人物背景方向。官方 square float16 模型随包分发，生成前景置信度蒙版；透明、模糊和纯色效果由本机 canvas 合成，并可用保留/移除软边画笔手动修正 alpha。原图对照与边缘告警保留人工复核，不把自动或手动分割描述为精确抠图。 |
+| [MediaPipe Object Detector](https://developers.google.com/edge/mediapipe/solutions/vision/object_detector/web_js) / [EfficientDet-Lite0](https://storage.googleapis.com/mediapipe-tasks/object_detector/efficientdet_lite0_uint8.tflite) | 已采用照片物体识别方向。官方推荐 uint8 模型随包分发，覆盖 80 类 COCO 标签；同时支持在内存中验证和运行带任务元数据的自定义 TFLite，以及可选索引标签 TXT。置信度筛选、逐框复核、JSON 和标注 PNG 都在本机完成，不把结果连接到自动化或安全判断。 |
+| [Pixelmatch](https://github.com/mapbox/pixelmatch) | 已采用图片差异核心。ISC、浏览器 typed array API、感知色差和抗锯齿过滤适合本机截图/照片比较；本项目在外层增加文件限制、有界共同画布、尺寸不一致警告、包围框、滑动人工复核与明确 PNG 导出。 |
+| [React Compare Slider](https://github.com/nerdyman/react-compare-slider) | 已评估。MIT、零依赖且原生支持键盘和屏幕阅读器，但本项目只需单一图片 wipe，直接使用原生 range 与小型 CSS clip 可以避免再增加 UI 依赖。 |
+| [Resemble.js](https://github.com/rsmbl/Resemble.js) | 已评估。MIT、功能完整，但仓库声明低频维护，浏览器/Node 双路径也比当前有界 typed-array 需求更宽；不采用。 |
+| [jsPDF](https://github.com/parallax/jsPDF) | 已采用。仅在用户导出时动态加载，在本机把内存扫描页生成多页 PDF。 |
+| [PaddleOCR KIE](https://github.com/PaddlePaddle/PaddleOCR/tree/main/ppstructure/kie) | 已评估。支持票据、表单和证件的关键字段提取及字段关系，准确率上限高；默认技术栈和模型明显重于当前离线 Electron 包，暂不进入基础安装。 |
+| [docTR](https://github.com/mindee/doctr) | 已评估。Apache-2.0，提供文档层级输出和 KIE predictor；目前依赖 Python 与 PyTorch/TensorFlow，更适合作为未来可选本机服务，而不是 renderer 依赖。 |
+| [doc_redaction](https://github.com/seanpedrick-case/doc_redaction) | 已评估。其检测后人工复核/修改流程验证了“自动建议不能替代导出前目视确认”；本项目采用更轻量的 Tesseract 坐标与本机确定性规则提示疑似 PII，仍复用可调整的手动遮盖编辑器，不引入其 Python/云端可选路径。 |
+| [MuPDF.js redaction example](https://github.com/ArtifexSoftware/mupdf.js) | 已评估。适合未来对原生 PDF 页面内容应用真正的 PDF redaction；当前扫描器输出的是栅格页，因此直接烧录黑色像素更小、更容易验证且不会留下可移除覆盖层。 |
+| [react-image-annotation](https://github.com/Secretmapper/react-image-annotation) | 已评估。矩形标注交互可借鉴，但仓库已归档；本项目用小型无依赖编辑器实现拖动与键盘操作，不增加停更依赖。 |
 | [Tesseract.js](https://github.com/naptha/tesseract.js) | 已采用。Apache-2.0；worker、WASM core 与英/简中/繁中语言数据随应用离线打包，只在文件或名片 OCR 时动态加载。 |
-| [PDF.js](https://github.com/mozilla/pdf.js) | 已采用。Apache-2.0；优先读取 PDF 文本层，对扫描页本地渲染后交给 Tesseract.js。 |
+| [PDF.js](https://github.com/mozilla/pdf.js) | 已采用。Apache-2.0；文件 OCR 优先读取 PDF 文本层，对扫描页本地渲染后交给 Tesseract.js；文档模式另提供有明确语义警告的逐页栅格导入，复用扫描、遮盖与再导出链路。 |
+| [cheminfo/mrz](https://github.com/cheminfo/mrz) | 已采用。MIT、无运行时依赖；解析 ICAO TD1/TD2/TD3，提供字段级有效性、校验位和受约束的 OCR 易混字符修正。只作为本机 OCR 后的人工复核助手，不作为证件真实性验证。 |
 
-当前阶段包含姿态、QR/条码、文档快照、文件 OCR、名片 OCR 和镜像切换。自动纸张边缘矫正、背景移除与虚拟摄像头仍留在后续阶段，避免同时运行多个高负载推理管线。
+当前阶段包含姿态、实时与图片 QR/条码、自动纸张边缘与透视矫正、页面方向旋转、原图拍摄质量建议、照片/PDF 栅格导入、多页文档/PDF、手动永久隐私遮盖、扫描页 OCR、本机文字 PII 建议、票据字段、TD1/TD2/TD3 MRZ 复核、批量文件 OCR、名片 OCR、人脸与常见照片元数据隐私、人物背景、内置/自定义模型物体识别、图片滑动/像素差异对比和镜像切换。文档处理已迁移到隔离 worker，避免阻塞 UI 或削弱 renderer CSP；保留原 PDF 结构的原生 redaction 与虚拟摄像头仍需要不同的 PDF/原生系统架构，留在后续阶段。
 
 ### 悬浮窗与媒体控制复查
 

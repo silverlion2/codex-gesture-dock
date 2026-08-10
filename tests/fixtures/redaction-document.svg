@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1200" viewBox="0 0 900 1200">
+  <rect width="900" height="1200" fill="#d8d3c8"/>
+  <path d="M105 75 L805 100 L780 1110 L80 1080 Z" fill="#fffdf7" stroke="#272727" stroke-width="12"/>
+  <text x="180" y="230" font-family="Arial, sans-serif" font-size="54" font-weight="700">PRIVATE RECORD</text>
+  <text x="165" y="390" font-family="Arial, sans-serif" font-size="42">Name: ALEX SAMPLE</text>
+  <text x="165" y="485" font-family="Arial, sans-serif" font-size="42">ID: 9988-7766</text>
+  <text x="165" y="580" font-family="Arial, sans-serif" font-size="42">Total: 140.80</text>
+  <line x1="160" y1="680" x2="710" y2="680" stroke="#555" stroke-width="5"/>
+  <text x="165" y="770" font-family="Arial, sans-serif" font-size="34">For local browser verification</text>
+</svg>

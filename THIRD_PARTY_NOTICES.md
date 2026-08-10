@@ -30,6 +30,7 @@ generated from the installed production dependency graph for version
 | debug | 4.4.3 | MIT |
 | dompurify | 3.4.13 | (MPL-2.0 OR Apache-2.0) |
 | electron-updater | 6.8.9 | MIT |
+| exifr | 7.1.3 | MIT |
 | fast-png | 6.4.0 | MIT |
 | fflate | 0.8.3 | MIT |
 | fs-extra | 10.1.0 | MIT |
@@ -45,12 +46,15 @@ generated from the installed production dependency graph for version
 | lodash.escaperegexp | 4.1.2 | MIT |
 | lodash.isequal | 4.5.0 | MIT |
 | lucide-react | 0.468.0 | ISC |
+| mrz | 5.0.2 | MIT |
 | ms | 2.1.3 | MIT |
 | node-fetch | 2.7.0 | MIT |
 | opencollective-postinstall | 2.0.3 | MIT |
 | pako | 2.2.0 | (MIT AND Zlib) |
 | pdfjs-dist | 6.2.108 | Apache-2.0 |
 | performance-now | 2.1.0 | MIT |
+| pixelmatch | 7.2.0 | ISC |
+| pngjs | 7.0.0 | MIT |
 | raf | 3.4.1 | MIT |
 | react-dom | 19.2.8 | MIT |
 | react | 19.2.8 | MIT |
@@ -80,6 +84,13 @@ distribution separately includes its own `LICENSE` and
 `LICENSES.chromium.html` notices. All third-party licenses remain in effect
 independently of this project's MIT license.
 
-The MediaPipe models and WebAssembly files are distributed solely for local
-inference. Codex Gesture Dock does not transmit camera frames to a remote
-service.
+The MediaPipe pose, gesture, BlazeFace short-range face detection,
+SelfieSegmenter person-background, and EfficientDet-Lite0 object-detection
+models, along with the WebAssembly files, are distributed solely for local
+inference.
+The SelfieSegmenter model card identifies Apache License, Version 2.0 and
+documents that the model is not intended for surveillance or identity
+recognition. Its source model card is:
+https://storage.googleapis.com/mediapipe-assets/Model%20Card%20MediaPipe%20Selfie%20Segmentation.pdf
+Codex Gesture Dock does not transmit camera frames or selected photos to a
+remote service.

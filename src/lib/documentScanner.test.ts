@@ -4,7 +4,9 @@ import { describe, expect, it } from 'vitest'
 import {
   calculateDocumentSize,
   captureFromImageFile,
+  normalizeDocumentRedaction,
   orderDocumentCorners,
+  rotateDocumentRedaction,
 } from './documentScanner'
 
 describe('document scanner geometry', () => {
@@ -43,5 +45,33 @@ describe('document scanner geometry', () => {
     const capture = await captureFromImageFile(new File(['pixels'], 'receipt.jpeg', { type: 'image/jpeg' }))
     expect(capture.filename).toBe('receipt.png')
     expect(capture.dataUrl).toMatch(/^data:image\/jpeg;base64,/)
+  })
+
+  it('clamps redaction boxes to page bounds and rejects tiny boxes', () => {
+    const clamped = normalizeDocumentRedaction({
+      id: 'outside',
+      x: -0.1,
+      y: 0.9,
+      width: 0.5,
+      height: 0.5,
+    })
+    expect(clamped).toMatchObject({ id: 'outside', x: 0, y: 0.9, width: 0.5 })
+    expect(clamped?.height).toBeCloseTo(0.1)
+    expect(normalizeDocumentRedaction({
+      id: 'tiny',
+      x: 0.5,
+      y: 0.5,
+      width: 0.001,
+      height: 0.001,
+    })).toBeNull()
+  })
+
+  it('transforms privacy boxes with clockwise and counterclockwise page rotation', () => {
+    const original = { id: 'private', x: 0.1, y: 0.2, width: 0.3, height: 0.4 }
+    const right = rotateDocumentRedaction(original, 'right')
+    const left = rotateDocumentRedaction(original, 'left')
+    expect(right).toMatchObject({ id: 'private', x: 0.4, y: 0.1, width: 0.4, height: 0.3 })
+    expect(left).toMatchObject({ id: 'private', x: 0.2, y: 0.6, width: 0.4, height: 0.3 })
+    expect(rotateDocumentRedaction(right!, 'left')).toEqual(original)
   })
 })

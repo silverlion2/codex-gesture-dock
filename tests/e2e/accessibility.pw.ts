@@ -38,7 +38,7 @@ test('expanded dashboard meets automated accessibility rules', async ({ page }) 
   await expectAccessible(page)
 
   await page.getByRole('button', { name: '文档' }).click()
-  await expect(page.getByRole('region', { name: '文档扫描' })).toBeVisible()
+  await expect(page.getByRole('region', { name: '智能文档扫描' })).toBeVisible()
   await expectAccessible(page)
 
   await page.getByRole('button', { name: '文字' }).click()
@@ -47,6 +47,20 @@ test('expanded dashboard meets automated accessibility rules', async ({ page }) 
 
   await page.getByRole('button', { name: '名片' }).click()
   await expect(page.getByRole('region', { name: '名片 OCR' })).toBeVisible()
+  await expectAccessible(page)
+
+  await page.getByRole('button', { name: '隐私' }).click()
+  await expect(
+    page.getByRole('region', { name: '人脸与照片隐私处理' }),
+  ).toBeVisible()
+  await expectAccessible(page)
+
+  await page.getByRole('button', { name: '背景' }).click()
+  await expect(page.getByRole('region', { name: '人物背景处理' })).toBeVisible()
+  await expectAccessible(page)
+
+  await page.getByRole('button', { name: '物体' }).click()
+  await expect(page.getByRole('region', { name: '本机物体识别' })).toBeVisible()
   await expectAccessible(page)
 })
 
@@ -82,6 +96,18 @@ test('compact camera dock meets automated accessibility rules', async ({ page })
 
   await page.getByRole('button', { name: '名片' }).click()
   await expect(page.getByRole('region', { name: '迷你名片 OCR 控制' })).toBeVisible()
+  await expectAccessible(page)
+
+  await page.getByRole('button', { name: '隐私' }).click()
+  await expect(page.getByRole('region', { name: '迷你人脸隐私控制' })).toBeVisible()
+  await expectAccessible(page)
+
+  await page.getByRole('button', { name: '背景' }).click()
+  await expect(page.getByRole('region', { name: '迷你人物背景控制' })).toBeVisible()
+  await expectAccessible(page)
+
+  await page.getByRole('button', { name: '物体' }).click()
+  await expect(page.getByRole('region', { name: '迷你物体识别控制' })).toBeVisible()
   await expectAccessible(page)
 })
 

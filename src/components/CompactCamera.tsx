@@ -5,7 +5,10 @@ import {
   ContactRound,
   FileText,
   FlipHorizontal2,
+  GitCompare,
   Hand,
+  EyeOff,
+  ImageMinus,
   RotateCcw,
 } from 'lucide-react'
 import type { RefObject } from 'react'
@@ -49,7 +52,7 @@ export function CompactCamera({
   onMirrorToggle,
   onRecalibrate,
 }: CompactCameraProps) {
-  const fileMode = mode === 'ocr' || mode === 'card'
+  const fileMode = mode === 'ocr' || mode === 'card' || mode === 'privacy' || mode === 'background' || mode === 'compare'
 
   return (
     <section
@@ -73,9 +76,9 @@ export function CompactCamera({
 
       {fileMode && (
         <div className="camera-placeholder file-ocr-placeholder">
-          {mode === 'card' ? <ContactRound size={31} aria-hidden="true" /> : <FileText size={31} aria-hidden="true" />}
-          <strong>{mode === 'card' ? '名片 OCR' : '文件 OCR'}</strong>
-          <span>{mode === 'card' ? '在下方导入名片照片，识别后确认联系人信息' : '在下方导入图像或 PDF，全程本机处理'}</span>
+          {mode === 'card' ? <ContactRound size={31} aria-hidden="true" /> : mode === 'privacy' ? <EyeOff size={31} aria-hidden="true" /> : mode === 'background' ? <ImageMinus size={31} aria-hidden="true" /> : mode === 'compare' ? <GitCompare size={31} aria-hidden="true" /> : <FileText size={31} aria-hidden="true" />}
+          <strong>{mode === 'card' ? '名片 OCR' : mode === 'privacy' ? '人脸隐私' : mode === 'background' ? '人物背景' : mode === 'compare' ? '图片对比' : '文件 OCR'}</strong>
+          <span>{mode === 'card' ? '在下方导入名片照片，识别后确认联系人信息' : mode === 'privacy' ? '在下方导入照片，本机检测并隐藏人脸' : mode === 'background' ? '在下方导入人物照片，本机移除、模糊或替换背景' : mode === 'compare' ? '在下方导入两张图片，本机滑动对照并生成差异热图' : '在下方导入图像或 PDF，全程本机处理'}</span>
         </div>
       )}
 

@@ -22,5 +22,17 @@ describe('CameraModeSwitcher', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '名片' }))
     expect(onChange).toHaveBeenCalledWith('card')
+
+    fireEvent.click(screen.getByRole('button', { name: '隐私' }))
+    expect(onChange).toHaveBeenCalledWith('privacy')
+
+    fireEvent.click(screen.getByRole('button', { name: '背景' }))
+    expect(onChange).toHaveBeenCalledWith('background')
+
+    fireEvent.click(screen.getByRole('button', { name: '物体' }))
+    expect(onChange).toHaveBeenCalledWith('objects')
+
+    fireEvent.click(screen.getByRole('button', { name: '对比' }))
+    expect(onChange).toHaveBeenCalledWith('compare')
   })
 })

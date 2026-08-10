@@ -141,9 +141,16 @@ distribution separately includes its own \`LICENSE\` and
 \`LICENSES.chromium.html\` notices. All third-party licenses remain in effect
 independently of this project's MIT license.
 
-The MediaPipe models and WebAssembly files are distributed solely for local
-inference. Codex Gesture Dock does not transmit camera frames to a remote
-service.
+The MediaPipe pose, gesture, BlazeFace short-range face detection,
+SelfieSegmenter person-background, and EfficientDet-Lite0 object-detection
+models, along with the WebAssembly files, are distributed solely for local
+inference.
+The SelfieSegmenter model card identifies Apache License, Version 2.0 and
+documents that the model is not intended for surveillance or identity
+recognition. Its source model card is:
+https://storage.googleapis.com/mediapipe-assets/Model%20Card%20MediaPipe%20Selfie%20Segmentation.pdf
+Codex Gesture Dock does not transmit camera frames or selected photos to a
+remote service.
 `
 
 const bundle = `Production dependency license texts for Codex Gesture Dock ${packageJson.version}
