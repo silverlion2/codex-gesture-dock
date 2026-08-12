@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   Check,
@@ -39,6 +40,7 @@ import {
   withLocalOcrSession,
   type LocalOcrRecognizer,
   type OcrProgress,
+  type OcrRegion,
 } from '../lib/localOcr'
 import { buildDocumentOcrText, documentOcrFilename } from '../lib/documentOcr'
 import { findPiiSuggestions, type PiiSuggestion } from '../lib/piiSuggestions'
@@ -47,6 +49,9 @@ import { extractReceiptFields, type ReceiptFields } from '../lib/receiptFields'
 import { DocumentCornerEditor } from './DocumentCornerEditor'
 import { DocumentRedactionEditor } from './DocumentRedactionEditor'
 import { ReceiptFieldsPanel } from './ReceiptFieldsPanel'
+import { OcrConfidenceReview } from './OcrConfidenceReview'
+import { OcrLayoutExportActions } from './OcrLayoutExportActions'
+import { summarizeOcrConfidence } from '../lib/ocrConfidence'
 
 const MrzFieldsPanel = lazy(() => import('./MrzFieldsPanel'))
 
@@ -63,6 +68,7 @@ interface PageOcrReview {
   text: string
   originalText: string
   piiSuggestions: PiiSuggestion[]
+  regions: OcrRegion[]
 }
 
 const filterLabels: Record<DocumentFilter, string> = {
@@ -111,6 +117,7 @@ export function DocumentToolPanel({
   const [editingRedactions, setEditingRedactions] = useState(false)
   const [receiptFields, setReceiptFields] = useState<ReceiptFields | null>(null)
   const [mrzExtraction, setMrzExtraction] = useState<MrzExtraction | null>(null)
+  const [reviewingConfidence, setReviewingConfidence] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const activePage = pages[activeIndex] ?? null
   const activeOcrReview = activePage ? pageOcrReviews[activePage.id] : undefined
@@ -134,6 +141,7 @@ export function DocumentToolPanel({
     setError('')
     setReceiptFields(null)
     setMrzExtraction(null)
+    setReviewingConfidence(false)
     setEditingRedactions(false)
     try {
       let page = await scanCapturedDocument(capture, filter, setProgressMessage, corners)
@@ -327,6 +335,7 @@ export function DocumentToolPanel({
       text: result.text,
       originalText: result.text,
       piiSuggestions: findPiiSuggestions(result.regions ?? [], page.width, page.height),
+      regions: result.regions ?? [],
     }
   }
 
@@ -551,7 +560,18 @@ export function DocumentToolPanel({
         </Suspense>
       )}
 
-      {!phase && activePage && !editingCorners && !editingRedactions && !receiptFields && !mrzExtraction && (
+      {!phase && activePage && activeOcrReview?.regions.length && reviewingConfidence && !editingCorners && !editingRedactions && !receiptFields && !mrzExtraction ? (
+        <OcrConfidenceReview
+          source={activePage.dataUrl}
+          sourceLabel={`第 ${activeIndex + 1} 页 · ${activePage.filename}`}
+          regions={activeOcrReview.regions}
+          width={activePage.width}
+          height={activePage.height}
+          onClose={() => setReviewingConfidence(false)}
+        />
+      ) : null}
+
+      {!phase && activePage && !editingCorners && !editingRedactions && !receiptFields && !mrzExtraction && !reviewingConfidence && (
         <div className="document-workbench">
           <div className="document-scan-preview">
             <img src={activePage.dataUrl} alt={`第 ${activeIndex + 1} 页扫描预览`} />
@@ -602,13 +622,15 @@ export function DocumentToolPanel({
               <div className="document-ocr-result">
                 <div>
                   <textarea aria-label="当前扫描页 OCR 文本" value={ocrText} onChange={(event) => updateActiveOcrText(event.target.value)} />
-                  <small>{activeOcrReview?.text === activeOcrReview?.originalText ? '本机 OCR 原始文本 · 可人工修正' : '已人工修正 · 复制、提取与 TXT 将使用当前文本'}</small>
+                  <small>{activeOcrReview?.text === activeOcrReview?.originalText ? '本机 OCR 原始文本 · 可人工修正' : '已人工修正 · 复制、提取与 TXT 将使用当前文本'}{activeOcrReview.regions.length > 0 ? ' · 版面 JSON/CSV 使用识别原始词框' : ''}</small>
                 </div>
                 <div>
                   <button type="button" onClick={() => void copyOcr()}>{copied ? <Check size={13} aria-hidden="true" /> : <Copy size={13} aria-hidden="true" />}{copied ? '已复制' : '复制'}</button>
                   {activeOcrReview?.text !== activeOcrReview?.originalText && <button type="button" onClick={() => { updateActiveOcrText(activeOcrReview.originalText); onMessage('已恢复当前页的本机 OCR 原始文本') }}><RotateCcw size={13} aria-hidden="true" />恢复识别文本</button>}
                   <button type="button" onClick={() => { setReceiptFields(extractReceiptFields(ocrText)); onMessage('已在本机预填票据字段，请确认后导出') }}><ReceiptText size={13} aria-hidden="true" />提取票据</button>
                   <button type="button" onClick={() => void reviewMrz()}><FileText size={13} aria-hidden="true" />提取 MRZ</button>
+                  {activeOcrReview.regions.length > 0 && <button type="button" onClick={() => setReviewingConfidence(true)}><AlertTriangle size={13} aria-hidden="true" />置信度复核 {summarizeOcrConfidence(activeOcrReview.regions).reviewCount}</button>}
+                  {activeOcrReview.regions.length > 0 && <OcrLayoutExportActions regions={activeOcrReview.regions} filename={activePage.filename} width={activePage.width} height={activePage.height} language="eng+chi_sim" onMessage={onMessage} />}
                   {piiSuggestions.length > 0 && <button type="button" onClick={() => { setEditingRedactions(true); setEditingCorners(false); onMessage('已载入疑似敏感信息位置；请调整、删除或确认后再应用') }}><ShieldAlert size={13} aria-hidden="true" />复核 {piiSuggestions.length} 处敏感信息</button>}
                 </div>
               </div>

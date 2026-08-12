@@ -1,5 +1,6 @@
 import {
   Check,
+  AlertTriangle,
   ContactRound,
   Copy,
   Download,
@@ -24,6 +25,9 @@ import {
   type OcrProgress,
   type OcrResult,
 } from '../lib/localOcr'
+import { summarizeOcrConfidence } from '../lib/ocrConfidence'
+import { OcrConfidenceReview } from './OcrConfidenceReview'
+import { OcrLayoutExportActions } from './OcrLayoutExportActions'
 
 const MrzFieldsPanel = lazy(() => import('./MrzFieldsPanel'))
 
@@ -92,6 +96,7 @@ function BatchOcrPanel({ onMessage }: Pick<OcrToolPanelProps, 'onMessage'>) {
   const [running, setRunning] = useState(false)
   const [copied, setCopied] = useState(false)
   const [mrzExtraction, setMrzExtraction] = useState<MrzExtraction | null>(null)
+  const [confidenceReviewId, setConfidenceReviewId] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const mountedRef = useRef(true)
 
@@ -115,6 +120,7 @@ function BatchOcrPanel({ onMessage }: Pick<OcrToolPanelProps, 'onMessage'>) {
     setRunning(true)
     setCopied(false)
     setMrzExtraction(null)
+    setConfidenceReviewId(null)
     let successCount = 0
     let errorCount = 0
 
@@ -162,11 +168,13 @@ function BatchOcrPanel({ onMessage }: Pick<OcrToolPanelProps, 'onMessage'>) {
     setSelectedId(null)
     setRunning(false)
     setMrzExtraction(null)
+    setConfidenceReviewId(null)
     setProgress({ progress: 0, message: '', page: 1, pageCount: 1 })
   }
 
   const cancel = () => abortRef.current?.abort()
   const selected = items.find((item) => item.id === selectedId) ?? null
+  const confidenceReviewItem = items.find((item) => item.id === confidenceReviewId) ?? null
   const successes = items.filter((item) => item.phase === 'success').length
   const combinedText = buildCombinedOcrText(items.map((item) => ({
     filename: item.file.name,
@@ -220,7 +228,14 @@ function BatchOcrPanel({ onMessage }: Pick<OcrToolPanelProps, 'onMessage'>) {
         <span><ShieldCheck size={13} aria-hidden="true" />模型与文件均留在本机</span>
       </header>
 
-      {items.length === 0 ? (
+      {confidenceReviewItem?.result?.regions?.length ? (
+        <OcrConfidenceReview
+          source={confidenceReviewItem.file}
+          sourceLabel={confidenceReviewItem.file.name}
+          regions={confidenceReviewItem.result.regions}
+          onClose={() => setConfidenceReviewId(null)}
+        />
+      ) : items.length === 0 ? (
         <div className="ocr-start-state">
           <div>
             <FileText size={25} aria-hidden="true" />
@@ -282,7 +297,7 @@ function BatchOcrPanel({ onMessage }: Pick<OcrToolPanelProps, 'onMessage'>) {
             <div className="batch-ocr-result">
               {selected?.result ? (
                 <>
-                  <div><strong>{selected.file.name}</strong><small>{selected.result.source === 'embedded-text' ? 'PDF 文本层' : selected.result.source === 'mixed' ? '文本层 + OCR' : '本地 OCR'}</small></div>
+                  <div><strong>{selected.file.name}</strong><small>{selected.result.source === 'embedded-text' ? 'PDF 文本层' : selected.result.source === 'mixed' ? '文本层 + OCR' : '本地 OCR'}{selected.result.regions?.length ? ' · 版面导出使用原始词框' : ''}</small></div>
                   <textarea aria-label="所选文件 OCR 文本" value={selected.result.text} readOnly />
                 </>
               ) : <p>{running ? '完成的文件会在这里显示识别文本。' : '没有可显示的识别结果。'}</p>}
@@ -293,6 +308,8 @@ function BatchOcrPanel({ onMessage }: Pick<OcrToolPanelProps, 'onMessage'>) {
               <button type="button" disabled={!selected?.result} onClick={() => void copySelected()}>{copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}{copied ? '已复制' : '复制所选'}</button>
               <button type="button" disabled={!selected?.result} onClick={() => selected?.result && downloadText(selected.result.text, safeTextFilename(selected.file.name), 'text/plain;charset=utf-8')}><Download size={14} aria-hidden="true" />保存所选 TXT</button>
               <button type="button" disabled={!selected?.result} onClick={() => void reviewSelectedMrz()}><FileText size={14} aria-hidden="true" />提取 MRZ</button>
+              <button type="button" disabled={!selected?.result?.regions?.length} onClick={() => selected && setConfidenceReviewId(selected.id)}><AlertTriangle size={14} aria-hidden="true" />置信度复核 {summarizeOcrConfidence(selected?.result?.regions ?? []).reviewCount}</button>
+              {selected?.result?.regions?.length ? <OcrLayoutExportActions regions={selected.result.regions} filename={selected.file.name} sourceFile={selected.file} language={language} onMessage={onMessage} /> : null}
               <button type="button" onClick={() => downloadText(combinedText, 'ocr-batch-results.txt', 'text/plain;charset=utf-8')}><Download size={14} aria-hidden="true" />导出合并 TXT</button>
             </div>
           )}
@@ -316,6 +333,7 @@ function SingleOcrToolPanel({ mode, onMessage }: OcrToolPanelProps) {
   const [card, setCard] = useState<BusinessCardFields>(emptyCard)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
+  const [reviewingConfidence, setReviewingConfidence] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => () => abortRef.current?.abort(), [])
@@ -326,6 +344,7 @@ function SingleOcrToolPanel({ mode, onMessage }: OcrToolPanelProps) {
     abortRef.current = controller
     setFile(selectedFile)
     setResult(null)
+    setReviewingConfidence(false)
     setCard(emptyCard)
     setError('')
     setPhase('recognizing')
@@ -365,6 +384,7 @@ function SingleOcrToolPanel({ mode, onMessage }: OcrToolPanelProps) {
     abortRef.current = null
     setFile(null)
     setResult(null)
+    setReviewingConfidence(false)
     setCard(emptyCard)
     setError('')
     setPhase('idle')
@@ -433,22 +453,30 @@ function SingleOcrToolPanel({ mode, onMessage }: OcrToolPanelProps) {
         </div>
       )}
 
-      {phase === 'success' && result && mode === 'ocr' && (
+      {phase === 'success' && result && reviewingConfidence && file && result.regions?.length ? (
+        <OcrConfidenceReview
+          source={file}
+          sourceLabel={file.name}
+          regions={result.regions}
+          onClose={() => setReviewingConfidence(false)}
+        />
+      ) : phase === 'success' && result && mode === 'ocr' && (
         <div className="ocr-result-state">
           <div className="ocr-result-meta">
             <span>{file?.name}</span>
-            <small>{result.pageCount} 页 · {result.source === 'embedded-text' ? 'PDF 文本层' : result.source === 'mixed' ? '文本层 + OCR' : '本地 OCR'}</small>
+            <small>{result.pageCount} 页 · {result.source === 'embedded-text' ? 'PDF 文本层' : result.source === 'mixed' ? '文本层 + OCR' : '本地 OCR'}{result.regions?.length ? ' · 版面导出使用原始词框' : ''}</small>
           </div>
           <textarea aria-label="OCR 识别文本" value={result.text} readOnly />
           <div className="ocr-actions">
             <button type="button" onClick={() => void copyResult()}>{copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}{copied ? '已复制' : '复制文本'}</button>
             <button type="button" onClick={() => downloadText(result.text, safeTextFilename(file?.name ?? ''), 'text/plain;charset=utf-8')}><Download size={14} aria-hidden="true" />保存 TXT</button>
+            {result.regions?.length && file ? <OcrLayoutExportActions regions={result.regions} filename={file.name} sourceFile={file} language={language} onMessage={onMessage} /> : null}
             <button type="button" onClick={reset}><RotateCcw size={14} aria-hidden="true" />识别其他文件</button>
           </div>
         </div>
       )}
 
-      {phase === 'success' && result && mode === 'card' && (
+      {phase === 'success' && result && mode === 'card' && !reviewingConfidence && (
         <div className="card-result-state">
           <div className="card-fields">
             {(Object.keys(card) as Array<keyof BusinessCardFields>).map((field) => (
@@ -459,9 +487,12 @@ function SingleOcrToolPanel({ mode, onMessage }: OcrToolPanelProps) {
             ))}
           </div>
           <div className="ocr-actions">
+            {result.regions?.length ? <button type="button" onClick={() => setReviewingConfidence(true)}><AlertTriangle size={14} aria-hidden="true" />置信度复核 {summarizeOcrConfidence(result.regions).reviewCount}</button> : null}
+            {result.regions?.length && file ? <OcrLayoutExportActions regions={result.regions} filename={file.name} sourceFile={file} language={language} onMessage={onMessage} /> : null}
             <button type="button" onClick={() => downloadText(buildVCard(card), businessCardFilename(card.name), 'text/vcard;charset=utf-8')}><Download size={14} aria-hidden="true" />确认并导出 VCF</button>
             <button type="button" onClick={reset}><RotateCcw size={14} aria-hidden="true" />识别另一张</button>
           </div>
+          {result.regions?.length ? <small className="ocr-layout-export-note">版面 JSON/CSV 使用识别时的原始词框，不跟随名片字段修改。</small> : null}
         </div>
       )}
     </section>

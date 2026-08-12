@@ -9,14 +9,18 @@ import {
   Hand,
   EyeOff,
   ImageMinus,
+  Palette,
   RotateCcw,
+  ScanFace,
 } from 'lucide-react'
-import type { RefObject } from 'react'
+import { useRef, type RefObject } from 'react'
 import type { GestureViewState } from '../hooks/useGestureControl'
+import { useFaceMask } from '../hooks/useFaceMask'
 import type { MonitorPhase } from '../hooks/usePoseMonitor'
 import type { CodeScannerPhase } from '../hooks/useCodeScanner'
 import type { CameraMode } from '../lib/cameraTools'
 import type { CameraFraming } from '../lib/mediaPreferences'
+import type { FaceMaskStyle } from '../lib/faceMasks'
 import { statusLabel, type PostureStatus } from '../lib/posture'
 
 interface CompactCameraProps {
@@ -32,6 +36,7 @@ interface CompactCameraProps {
   mirrored: boolean
   framing: CameraFraming
   scanPhase: CodeScannerPhase
+  faceMaskStyle: FaceMaskStyle
   onMirrorToggle: () => void
   onRecalibrate: () => void
 }
@@ -49,10 +54,19 @@ export function CompactCamera({
   mirrored,
   framing,
   scanPhase,
+  faceMaskStyle,
   onMirrorToggle,
   onRecalibrate,
 }: CompactCameraProps) {
-  const fileMode = mode === 'ocr' || mode === 'card' || mode === 'privacy' || mode === 'background' || mode === 'compare'
+  const faceMaskCanvasRef = useRef<HTMLCanvasElement>(null)
+  const faceMaskActive = mode === 'masks' && (phase === 'calibrating' || phase === 'monitoring')
+  const faceMask = useFaceMask({
+    active: faceMaskActive,
+    videoRef,
+    canvasRef: faceMaskCanvasRef,
+    style: faceMaskStyle,
+  })
+  const fileMode = mode === 'ocr' || mode === 'card' || mode === 'privacy' || mode === 'background' || mode === 'compare' || mode === 'colors'
 
   return (
     <section
@@ -61,6 +75,12 @@ export function CompactCamera({
     >
       <video ref={videoRef} autoPlay muted playsInline aria-label="实时摄像头画面" />
       <canvas ref={canvasRef} aria-hidden="true" hidden={mode !== 'monitor'} />
+      <canvas
+        ref={faceMaskCanvasRef}
+        className="face-mask-canvas"
+        aria-hidden="true"
+        hidden={mode !== 'masks'}
+      />
 
       {!fileMode && (
         <button
@@ -76,9 +96,9 @@ export function CompactCamera({
 
       {fileMode && (
         <div className="camera-placeholder file-ocr-placeholder">
-          {mode === 'card' ? <ContactRound size={31} aria-hidden="true" /> : mode === 'privacy' ? <EyeOff size={31} aria-hidden="true" /> : mode === 'background' ? <ImageMinus size={31} aria-hidden="true" /> : mode === 'compare' ? <GitCompare size={31} aria-hidden="true" /> : <FileText size={31} aria-hidden="true" />}
-          <strong>{mode === 'card' ? '名片 OCR' : mode === 'privacy' ? '人脸隐私' : mode === 'background' ? '人物背景' : mode === 'compare' ? '图片对比' : '文件 OCR'}</strong>
-          <span>{mode === 'card' ? '在下方导入名片照片，识别后确认联系人信息' : mode === 'privacy' ? '在下方导入照片，本机检测并隐藏人脸' : mode === 'background' ? '在下方导入人物照片，本机移除、模糊或替换背景' : mode === 'compare' ? '在下方导入两张图片，本机滑动对照并生成差异热图' : '在下方导入图像或 PDF，全程本机处理'}</span>
+          {mode === 'card' ? <ContactRound size={31} aria-hidden="true" /> : mode === 'privacy' ? <EyeOff size={31} aria-hidden="true" /> : mode === 'background' ? <ImageMinus size={31} aria-hidden="true" /> : mode === 'compare' ? <GitCompare size={31} aria-hidden="true" /> : mode === 'colors' ? <Palette size={31} aria-hidden="true" /> : <FileText size={31} aria-hidden="true" />}
+          <strong>{mode === 'card' ? '名片 OCR' : mode === 'privacy' ? '人脸隐私' : mode === 'background' ? '人物背景' : mode === 'compare' ? '图片分析' : mode === 'colors' ? '颜色实验室' : '文件 OCR'}</strong>
+          <span>{mode === 'card' ? '在下方导入名片照片，识别后确认联系人信息' : mode === 'privacy' ? '在下方导入照片，本机检测并隐藏人脸' : mode === 'background' ? '在下方导入人物照片，本机移除、模糊或替换背景' : mode === 'compare' ? '在下方对比、查重、裁剪、旋转、转换、压缩、检查、标注或编排图片' : mode === 'colors' ? '在下方导入图片，本机提取调色板并检查文字对比度' : '在下方导入图像或 PDF，全程本机处理'}</span>
         </div>
       )}
 
@@ -176,6 +196,16 @@ export function CompactCamera({
         <div className="document-scan-guide" aria-hidden="true">
           <i /><i /><i /><i />
           <span>对齐纸张边缘</span>
+        </div>
+      )}
+
+      {faceMaskActive && (
+        <div className={`face-mask-live is-${faceMask.phase}`} role="status" aria-live="polite">
+          {faceMask.phase === 'loading' ? <span className="small-spinner" aria-hidden="true" /> : <ScanFace size={15} aria-hidden="true" />}
+          <div>
+            <strong>{faceMask.phase === 'tracking' ? '面具跟踪中' : faceMask.phase === 'searching' ? '让脸部进入画面' : faceMask.phase === 'error' ? '表情模型异常' : '正在加载表情模型'}</strong>
+            <small>{faceMask.phase === 'error' ? faceMask.error : faceMask.phase === 'tracking' ? `张嘴 ${Math.round(faceMask.expression.mouthOpen * 100)} · 微笑 ${Math.round(faceMask.expression.smile * 100)}` : '所有推理均在本机完成'}</small>
+          </div>
         </div>
       )}
 

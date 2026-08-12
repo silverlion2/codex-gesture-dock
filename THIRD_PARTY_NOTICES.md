@@ -25,6 +25,7 @@ generated from the installed production dependency graph for version
 | bmp-js | 0.1.0 | MIT |
 | builder-util-runtime | 9.7.0 | MIT |
 | canvg | 3.0.11 | MIT |
+| colorthief | 3.3.0 | MIT |
 | core-js | 3.50.0 | MIT |
 | css-line-break | 2.1.0 | MIT |
 | debug | 4.4.3 | MIT |
@@ -57,6 +58,7 @@ generated from the installed production dependency graph for version
 | pngjs | 7.0.0 | MIT |
 | raf | 3.4.1 | MIT |
 | react-dom | 19.2.8 | MIT |
+| react-image-crop | 11.1.2 | ISC |
 | react | 19.2.8 | MIT |
 | regenerator-runtime | 0.13.11 | MIT |
 | rgbcolor | 1.0.1 | MIT OR SEE LICENSE IN FEEL-FREE.md |

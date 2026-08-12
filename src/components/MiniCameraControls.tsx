@@ -8,7 +8,9 @@ import {
   FileText,
   GitCompare,
   ImageMinus,
+  Palette,
   Play,
+  ScanFace,
   ScanLine,
   ScanSearch,
   Square,
@@ -174,18 +176,23 @@ export function MiniCameraControls({
     )
   }
 
-  if (mode === 'ocr' || mode === 'card' || mode === 'privacy' || mode === 'background' || mode === 'objects' || mode === 'compare') {
-    const Icon = mode === 'card' ? ContactRound : mode === 'privacy' ? EyeOff : mode === 'background' ? ImageMinus : mode === 'objects' ? ScanSearch : mode === 'compare' ? GitCompare : FileText
+  if (mode === 'masks' || mode === 'ocr' || mode === 'card' || mode === 'privacy' || mode === 'background' || mode === 'objects' || mode === 'compare' || mode === 'colors') {
+    const Icon = mode === 'masks' ? ScanFace : mode === 'card' ? ContactRound : mode === 'privacy' ? EyeOff : mode === 'background' ? ImageMinus : mode === 'objects' ? ScanSearch : mode === 'compare' ? GitCompare : mode === 'colors' ? Palette : FileText
     return (
-      <section className="mini-camera-controls" aria-label={mode === 'card' ? '迷你名片 OCR 控制' : mode === 'privacy' ? '迷你人脸隐私控制' : mode === 'background' ? '迷你人物背景控制' : mode === 'objects' ? '迷你物体识别控制' : mode === 'compare' ? '迷你图片对比控制' : '迷你文件 OCR 控制'}>
+      <section className="mini-camera-controls" aria-label={mode === 'masks' ? '迷你动态面具控制' : mode === 'card' ? '迷你名片 OCR 控制' : mode === 'privacy' ? '迷你人脸隐私控制' : mode === 'background' ? '迷你人物背景控制' : mode === 'objects' ? '迷你物体识别控制' : mode === 'compare' ? '迷你图片对比控制' : mode === 'colors' ? '迷你颜色分析控制' : '迷你文件 OCR 控制'}>
         <div className="mini-tool-reading">
           <Icon size={17} aria-hidden="true" />
           <div>
-            <strong>{mode === 'card' ? '名片 OCR' : mode === 'privacy' ? '人脸隐私' : mode === 'background' ? '人物背景' : mode === 'objects' ? '物体识别' : mode === 'compare' ? '图片对比' : '文件 OCR'}</strong>
-            <small>点击右上角展开，在完整面板中选择文件</small>
+            <strong>{mode === 'masks' ? '表情动态面具' : mode === 'card' ? '名片 OCR' : mode === 'privacy' ? '人脸隐私' : mode === 'background' ? '人物背景' : mode === 'objects' ? '物体识别' : mode === 'compare' ? '图片对比' : mode === 'colors' ? '颜色实验室' : '文件 OCR'}</strong>
+            <small>{mode === 'masks' ? sessionReady ? '面具正在跟随表情' : sessionActive ? '正在准备面具跟踪' : '启动摄像头后开始跟踪' : '点击右上角展开，在完整面板中选择文件'}</small>
           </div>
         </div>
-        <div className="mini-control-actions">{mediaControls}</div>
+        <div className="mini-control-actions">
+          {mode === 'masks' && !sessionActive ? (
+            <button className="mini-camera-primary" type="button" onClick={onSessionToggle}><Play size={14} aria-hidden="true" />启动</button>
+          ) : null}
+          {mediaControls}
+        </div>
       </section>
     )
   }

@@ -103,7 +103,10 @@ describe('DocumentToolPanel', () => {
       text: 'Northwind Cafe\nInvoice # QA-2026-0808\nDate 2026-08-08\nSubtotal $ 128.00\nTax $ 12.80\nGrand Total $ 140.80',
       pageCount: 1,
       source: 'ocr',
-      regions: [{ text: 'billing@northwind.test', confidence: 96, lineId: '0-0-0', x0: 90, y0: 180, x1: 360, y1: 218 }],
+      regions: [
+        { text: 'billing@northwind.test', confidence: 96, lineId: '0-0-0', x0: 90, y0: 180, x1: 360, y1: 218 },
+        { text: 'T0tal', confidence: 58, lineId: '0-0-1', x0: 90, y0: 420, x1: 180, y1: 458 },
+      ],
     })
     const onMessage = vi.fn()
     const { container } = render(
@@ -133,10 +136,17 @@ describe('DocumentToolPanel', () => {
     await waitFor(() => expect((screen.getByRole('textbox', { name: '当前扫描页 OCR 文本' }) as HTMLTextAreaElement).value).toContain('Grand Total $ 140.80'))
     expect(recognizeLocalFile).toHaveBeenCalledWith(expect.any(File), 'eng+chi_sim', expect.any(Function), expect.any(AbortSignal))
 
+    fireEvent.click(screen.getByRole('button', { name: '置信度复核 1' }))
+    expect(screen.getByRole('region', { name: 'OCR 置信度复核' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '复核文字 T0tal，置信度 58%' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '返回 OCR 文本' }))
+
     fireEvent.change(screen.getByRole('textbox', { name: '当前扫描页 OCR 文本' }), {
       target: { value: 'Reviewed Cafe\nInvoice # QA-2026-0808\nDate 2026-08-08\nSubtotal $ 128.00\nTax $ 12.80\nGrand Total $ 140.80' },
     })
-    expect(screen.getByText('已人工修正 · 复制、提取与 TXT 将使用当前文本')).toBeTruthy()
+    expect(screen.getByText(/已人工修正 · 复制、提取与 TXT 将使用当前文本/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: '版面 JSON' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '版面 CSV' })).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: '提取票据' }))
     expect(screen.getByRole('region', { name: '票据结构化字段' })).toBeTruthy()

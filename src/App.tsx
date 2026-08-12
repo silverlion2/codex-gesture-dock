@@ -18,6 +18,7 @@ import { CompactCamera } from './components/CompactCamera'
 import { CameraModeSwitcher } from './components/CameraModeSwitcher'
 import { GestureBook } from './components/GestureBook'
 import { FacePrivacyPanel } from './components/FacePrivacyPanel'
+import { FaceMaskPanel } from './components/FaceMaskPanel'
 import { BackgroundToolPanel } from './components/BackgroundToolPanel'
 import { ObjectDetectionPanel } from './components/ObjectDetectionPanel'
 import {
@@ -54,6 +55,7 @@ import type {
 import type { CodexIntegrationStatus } from './lib/codexIntegration'
 import type { AppUpdateStatus } from './lib/appUpdate'
 import type { CameraMode } from './lib/cameraTools'
+import type { FaceMaskStyle } from './lib/faceMasks'
 import {
   loadMediaPreferences,
   saveMediaPreferences,
@@ -62,6 +64,7 @@ import {
 
 const CameraToolPanel = lazy(() => import('./components/CameraToolPanel'))
 const ImageComparisonPanel = lazy(() => import('./components/ImageComparisonPanel').then((module) => ({ default: module.ImageComparisonPanel })))
+const ColorAnalysisPanel = lazy(() => import('./components/ColorAnalysisPanel').then((module) => ({ default: module.ColorAnalysisPanel })))
 
 const initialSettings: ReminderSettings = {
   postureEnabled: true,
@@ -119,6 +122,7 @@ function WidgetApp() {
   const [expanded, setExpanded] = useState(initialExpandedState)
   const [settings, setSettings] = useState(initialSettings)
   const [cameraMode, setCameraMode] = useState<CameraMode>('monitor')
+  const [faceMaskStyle, setFaceMaskStyle] = useState<FaceMaskStyle>('fox')
   const [mediaPreferences, setMediaPreferences] = useState(loadMediaPreferences)
   const [gestureMode, setGestureMode] = useState<GestureMode>(initialGestureMode)
   const [taskPickerOpen, setTaskPickerOpen] = useState(false)
@@ -664,7 +668,7 @@ function WidgetApp() {
               <CameraModeSwitcher mode={cameraMode} onChange={setCameraMode} />
             </header>
 
-            {expanded && cameraMode !== 'ocr' && cameraMode !== 'card' && cameraMode !== 'privacy' && cameraMode !== 'background' && cameraMode !== 'compare' ? (
+            {expanded && cameraMode !== 'ocr' && cameraMode !== 'card' && cameraMode !== 'privacy' && cameraMode !== 'background' && cameraMode !== 'compare' && cameraMode !== 'colors' ? (
               <MediaInputPanel {...mediaControlProps} />
             ) : null}
 
@@ -681,6 +685,7 @@ function WidgetApp() {
               mirrored={mediaPreferences.cameraMirrored}
               framing={mediaPreferences.cameraFraming}
               scanPhase={codeScanner.phase}
+              faceMaskStyle={faceMaskStyle}
               onMirrorToggle={() =>
                 setMediaPreferences((current) => ({
                   ...current,
@@ -765,6 +770,13 @@ function WidgetApp() {
               </Suspense>
             ) : cameraMode === 'privacy' ? (
               <FacePrivacyPanel onMessage={showReminder} />
+            ) : cameraMode === 'masks' ? (
+              <FaceMaskPanel
+                style={faceMaskStyle}
+                onStyleChange={setFaceMaskStyle}
+                sessionActive={['loading', 'calibrating', 'monitoring'].includes(monitor.phase)}
+                onStart={handlePrimaryAction}
+              />
             ) : cameraMode === 'background' ? (
               <BackgroundToolPanel onMessage={showReminder} />
             ) : cameraMode === 'objects' ? (
@@ -775,8 +787,12 @@ function WidgetApp() {
                 onMessage={showReminder}
               />
             ) : cameraMode === 'compare' ? (
-              <Suspense fallback={<div className="tool-empty-state" role="status">正在加载本机图片对比工具</div>}>
+              <Suspense fallback={<div className="tool-empty-state" role="status">正在加载本机图片工具</div>}>
                 <ImageComparisonPanel onMessage={showReminder} />
+              </Suspense>
+            ) : cameraMode === 'colors' ? (
+              <Suspense fallback={<div className="tool-empty-state" role="status">正在加载本机颜色分析工具</div>}>
+                <ColorAnalysisPanel onMessage={showReminder} />
               </Suspense>
             ) : (
               <OcrToolPanel

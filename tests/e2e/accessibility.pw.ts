@@ -33,6 +33,14 @@ test('expanded dashboard meets automated accessibility rules', async ({ page }) 
   )
   await expectAccessible(page)
 
+  await page.getByRole('button', { name: '面具' }).click()
+  await expect(page.getByRole('region', { name: '表情动态面具' })).toBeVisible()
+  await expect(page.getByRole('radio', { name: /霓虹狐/ })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  )
+  await expectAccessible(page)
+
   await page.getByRole('button', { name: '扫码' }).click()
   await expect(page.getByRole('region', { name: '扫码结果' })).toBeVisible()
   await expectAccessible(page)
@@ -81,6 +89,10 @@ test('compact camera dock meets automated accessibility rules', async ({ page })
   await expect(page.getByRole('combobox', { name: '选择麦克风' })).toBeVisible()
   await expectAccessible(page)
   await page.locator('.mini-media-menu > summary').click()
+
+  await page.getByRole('button', { name: '面具' }).click()
+  await expect(page.getByRole('region', { name: '迷你动态面具控制' })).toBeVisible()
+  await expectAccessible(page)
 
   await page.getByRole('button', { name: '扫码' }).click()
   await expect(page.getByRole('region', { name: '迷你扫码控制' })).toBeVisible()

@@ -3,12 +3,25 @@
 ```text
 src/                    React UI、MediaPipe hooks、状态机和组件测试
 src/lib/piiSuggestions.ts 扫描页 OCR 坐标的本机敏感信息建议与遮盖框生成
+src/lib/ocrConfidence.ts OCR 词级置信度摘要、低分排序、坐标限制与归一化
+src/lib/ocrLayoutExport.ts OCR 原始词框的版本化 JSON/公式安全 CSV、像素与归一化坐标及安全文件名
 src/lib/documentScanner.ts 照片/PDF 栅格导入、OpenCV 扫描、永久遮盖与 PNG/PDF 导出
 src/lib/documentQuality.ts 扫描原图的有界亮度、对比度、清晰度、分辨率与局部高光启发式分析
 src/lib/mrzExtraction.ts 文件/扫描页 OCR 的 TD1/TD2/TD3 候选提取、字段校验与复核 JSON
 src/lib/codeImageScanner.ts 用户选择图片的一次性本机 QR/条码解码与资源释放
 src/lib/imageMetadata.ts  用户选择照片的常见 EXIF/GPS 隐私字段检查与无元数据导出文件名
 src/lib/imageComparison.ts 两张本机图片的有界归一化、Pixelmatch 差异指标、热图与安全导出文件名
+src/lib/imageSimilarity.ts 批量图片的 128 位双方向 dHash、SHA-256 精确摘要、Hamming 距离与候选排序
+src/lib/imageOptimizer.ts 单图有界等比例缩放、PNG/JPEG/WebP 原生 Canvas 编码、MIME 验证与安全导出文件名
+src/lib/imageCrop.ts 单图安全工作栅格、原图派生 90° 旋转、裁剪坐标限制和 PNG/JPEG/WebP 输出
+src/lib/imageInspection.ts 单图有界 RGBA 检查、64 档直方图、曝光/透明/拉普拉斯诊断信号和 schema v1 JSON
+src/lib/imageAnnotation.ts 单图归一化标注模型、边界/顺序验证、模糊优先扁平渲染和安全 PNG 文件名
+src/lib/imageContactSheet.ts 2–20 图联系表验证、contain/cover 几何、有界网格布局、逐张 Canvas 合成和安全 PNG 文件名
+src/lib/imageLongLayout.ts 2–12 图纵横拼接、手动起始裁去、连续等分拆图、逐项有界 Canvas 渲染和安全 PNG 文件名
+src/lib/imageAdjustment.ts 单图确定性曝光/对比度/色温/饱和度/灰度、分块处理、有界预览与 PNG/JPEG/WebP 导出
+src/lib/imageWatermark.ts 1–12 图文字/Logo 九宫格或平铺水印、有界逐张 Canvas 渲染与安全 PNG/JPEG/WebP 文件名
+src/lib/imageBatchProcessor.ts 1–20 图批量缩放/格式转换、碰撞安全编号命名、合计体积门禁与逐张处理适配
+src/lib/colorAnalysis.ts 用户图片的有界白底归一化、OKLCH 调色板、点取样、WCAG 对比与 CSS/JSON 序列化
 electron/               Electron main/preload、Codex/Windows 控制和单元测试
 public/models/           本地 MediaPipe 姿态、手势、BlazeFace 人脸检测、SelfieSegmenter 人物分割与 EfficientDet-Lite0 物体检测模型
 public/wasm/             本地 MediaPipe WASM runtime

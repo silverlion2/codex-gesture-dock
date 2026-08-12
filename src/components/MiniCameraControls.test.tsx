@@ -71,6 +71,14 @@ describe('MiniCameraControls', () => {
     expect(props.onSessionToggle).toHaveBeenCalledTimes(1)
   })
 
+  it('starts expression masks from the compact view', () => {
+    const props = renderControls({ mode: 'masks' })
+
+    expect(screen.getByText('表情动态面具')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '启动' }))
+    expect(props.onSessionToggle).toHaveBeenCalledTimes(1)
+  })
+
   it('directs compact OCR users to the full panel without starting the camera', () => {
     const props = renderControls({ mode: 'ocr' })
 
@@ -84,6 +92,14 @@ describe('MiniCameraControls', () => {
 
     expect(screen.getByText('图片对比')).toBeTruthy()
     expect(screen.getByRole('region', { name: '迷你图片对比控制' })).toBeTruthy()
+    expect(props.onSessionToggle).not.toHaveBeenCalled()
+  })
+
+  it('directs compact color-analysis users to the full panel without starting the camera', () => {
+    const props = renderControls({ mode: 'colors' })
+
+    expect(screen.getByText('颜色实验室')).toBeTruthy()
+    expect(screen.getByRole('region', { name: '迷你颜色分析控制' })).toBeTruthy()
     expect(props.onSessionToggle).not.toHaveBeenCalled()
   })
 })

@@ -57,6 +57,15 @@ project.
   page. The worker is terminated after completion, cancellation, or failure;
   queued files, per-file errors, and completed text remain in renderer memory until reset or tool closure.
   Combined TXT export occurs only after an explicit user action.
+  Image OCR word confidence scores and bounding boxes may be shown as a local
+  review overlay for file, business-card, and scanned-page results. The chosen
+  threshold and selection are temporary UI state; scores and geometry are not
+  persisted or used to rewrite recognized text automatically. Only an explicit
+  “layout JSON” or “layout CSV” action writes the source filename, dimensions,
+  recognized words, confidence scores, and pixel/normalized geometry to the
+  user-selected download location. Those exports can contain sensitive text and
+  should be handled like the source document. PDF pages read directly from an
+  embedded text layer do not expose this overlay or layout export.
 - Receipt/invoice fields are derived from the current OCR text by deterministic
   local matching. The editable merchant, date, document number, subtotal, tax,
   total, and currency values stay in renderer memory until the user explicitly
@@ -120,6 +129,78 @@ project.
   or metric is uploaded or persisted; only an explicit export writes a newly
   encoded diff PNG. Pixel similarity is not treated as proof of functional,
   semantic, visual-quality, or accessibility equivalence.
+- Duplicate Image Finder accepts 2–20 explicitly selected local images, with a
+  35 MB per-file and 200 MB total limit. It sequentially creates bounded JPEG
+  previews, a 128-bit two-direction difference hash, and (when Web Crypto is
+  available) a SHA-256 digest. Files, previews, hashes, pair distances, and
+  partial errors stay in renderer memory until reset or tool closure. The app
+  never deletes, moves, renames, or uploads source files. Perceptual-hash matches
+  are review candidates, not proof that two images are semantically identical.
+- Image Optimizer accepts one explicitly selected PNG, JPEG, WebP, or BMP and
+  uses the browser's local canvas encoder to resize or convert it. Source pixels
+  and the encoded preview remain in renderer memory. Re-encoding does not copy
+  source EXIF, GPS, XMP, IPTC, or ICC metadata; JPEG also composites transparent
+  pixels onto white. Only “confirm and export” writes the new file, and the
+  source file is never modified. The browser may cache a generated Blob at its
+  discretion until the temporary object URL is revoked.
+- Image Crop and Rotate accepts one explicitly selected local image and creates
+  a bounded in-memory working raster. Crop percentages, pixel coordinates,
+  rotation, aspect ratio, preview Blob, and result remain in renderer memory.
+  Every rotation is derived again from the original selected File rather than
+  an earlier preview. Only an explicit final export writes a newly encoded PNG,
+  JPEG, or WebP; it does not overwrite the source or copy source metadata.
+- Image Inspection decodes one explicitly selected local image into a bounded
+  transparent in-memory canvas. Its 64-bin histograms, luminance, contrast,
+  Laplacian edge response, clipping ratios, transparency ratios, diagnostic
+  signals, and preview Blob remain in renderer memory. Fully transparent pixels
+  are excluded from exposure metrics. Only an explicit action writes the
+  versioned inspection JSON; the source image is never modified or uploaded.
+- Image Annotation accepts one explicitly selected local image and keeps its
+  normalized rectangles, arrows, numbered markers, text, blur regions, and
+  undo history in renderer memory. A bounded working raster is derived from
+  the selected file; blur is burned into source pixels before visible marks are
+  drawn. Only an explicit preview and final export writes a flattened PNG that
+  does not copy source metadata. No editable annotation project is persisted,
+  and the selected source is never overwritten or uploaded.
+- Contact Sheet accepts 2–20 explicitly selected PNG, JPEG, WebP, or BMP files,
+  with a 35 MB per-file and 200 MB total limit. Selection order, temporary
+  preview URLs, layout settings, filenames, and the generated preview remain in
+  renderer memory. Images are decoded and drawn sequentially into one bounded
+  opaque canvas instead of retaining every decoded bitmap at once. Only an
+  explicit preview and final export writes a flattened PNG; source metadata is
+  not copied, source files are never modified, and no editable layout project
+  is persisted or uploaded.
+- Long Image Join and Split processes only explicitly selected PNG, JPEG,
+  WebP, or BMP files. Join mode accepts 2-12 files, with a 35 MB per-file and
+  160 MB total limit; order, direction, spacing, background, and the manual
+  0%-50% leading-edge trim for later images remain in renderer memory. It
+  reads dimensions and draws files sequentially rather than retaining every
+  decoded bitmap. Split mode decodes one file up to 35 MB and divides all
+  source pixels into 2-12 adjacent, non-overlapping regions. Decoded sources
+  above 80 million pixels are rejected, and every generated PNG is bounded to
+  an 8192-pixel side and 24 million pixels. Preview and result object URLs are
+  revoked on reset or tool closure. Exports are newly encoded PNG files that
+  do not copy source metadata; source files are never modified or uploaded and
+  no editable join project is persisted.
+- Image adjustment decodes one explicitly selected PNG, JPEG, WebP, or BMP and
+  applies exposure, contrast, temperature, saturation, and grayscale in a fixed
+  order. A bounded preview is held in renderer memory; full-size bounded pixels
+  are created only for an explicit export and processed in cooperative chunks.
+  PNG/WebP retain alpha while JPEG composites onto white. Source files and
+  metadata are never modified, copied, persisted, or uploaded.
+- Batch watermarking accepts 1–12 explicitly selected local images plus an
+  optional local logo. The first bounded preview and each final bounded output
+  are rendered with Canvas in the renderer. Final images are processed and
+  downloaded one at a time so a full high-resolution batch is not retained in
+  memory. Source files, logo pixels, settings, and metadata are not uploaded or
+  persisted; only explicit downloads leave the tool state.
+- Color Lab decodes one explicitly selected PNG, JPEG, WebP, or BMP into a
+  bounded white-backed in-memory canvas and runs the bundled Color Thief
+  quantizer locally. The normalized pixels, OKLCH palette, sampled points,
+  foreground/background colors, and WCAG contrast result stay in renderer
+  memory. Nothing is written automatically; CSS or JSON leaves the tool only
+  when the user explicitly copies it. A sampled color-pair ratio is not treated
+  as a complete accessibility audit of the image or design.
 - Body landmarks, posture calibration, and detected gestures are not written to
   disk or sent over the network.
 - Daily posture totals, reminder preferences, gesture mode, selected camera and
@@ -165,6 +246,12 @@ users can choose whether to retain or erase local history.
 
 ## Scope and changes
 
+Expression Masks loads the bundled MediaPipe Face Landmarker only after the
+user selects Mask mode and starts the camera. Face landmarks and blendshape
+scores are used transiently to draw the selected overlay in the renderer; they
+are not uploaded, recorded, written to disk, or used to infer identity or
+emotion. Leaving Mask mode stops the analysis loop and clears the overlay.
+
 This notice applies to the open-source Codex Gesture Dock application in this
 repository. A distributor that adds telemetry, accounts, or another network
 service must publish a separate notice and obtain any consent required by
@@ -172,3 +259,9 @@ applicable law. Material privacy changes must be documented before release.
 
 Security or privacy concerns can be reported through the repository's GitHub
 issue tracker without including sensitive task content, file paths, or logs.
+
+Batch image conversion accepts 1–20 explicitly selected PNG, JPEG, WebP, or BMP
+files. The renderer keeps the file handles, first-image preview, and one encoded
+result at a time in memory; it does not upload images, copy EXIF/GPS metadata,
+overwrite sources, or retain a batch after the workspace is reset. Files leave
+the app only when the user confirms the browser downloads.

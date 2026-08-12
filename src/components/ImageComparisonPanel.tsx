@@ -7,6 +7,16 @@ import {
   type PreparedImageComparison,
   type RenderedImageComparison,
 } from '../lib/imageComparison'
+import { ImageDuplicateFinder } from './ImageDuplicateFinder'
+import { ImageOptimizer } from './ImageOptimizer'
+import { ImageCropPanel } from './ImageCropPanel'
+import { ImageInspectionPanel } from './ImageInspectionPanel'
+import { ImageAnnotationPanel } from './ImageAnnotationPanel'
+import { ImageContactSheetPanel } from './ImageContactSheetPanel'
+import { ImageLongLayoutPanel } from './ImageLongLayoutPanel'
+import { ImageAdjustmentPanel } from './ImageAdjustmentPanel'
+import { ImageWatermarkPanel } from './ImageWatermarkPanel'
+import { ImageBatchProcessorPanel } from './ImageBatchProcessorPanel'
 
 interface ImageComparisonPanelProps {
   onMessage: (message: string) => void
@@ -14,6 +24,7 @@ interface ImageComparisonPanelProps {
 
 type ComparisonPhase = 'idle' | 'preparing' | 'ready' | 'error'
 type ComparisonView = 'wipe' | 'diff'
+type ImageAnalysisWorkspace = 'compare' | 'duplicates' | 'optimize' | 'crop' | 'inspect' | 'annotate' | 'contact-sheet' | 'long-image' | 'adjust' | 'watermark' | 'batch'
 
 const toleranceOptions = [
   { value: 0.05, label: '严格 · 5%' },
@@ -44,6 +55,7 @@ function wipePositionForKey(key: string, current: number) {
 }
 
 export function ImageComparisonPanel({ onMessage }: ImageComparisonPanelProps) {
+  const [workspace, setWorkspace] = useState<ImageAnalysisWorkspace>('compare')
   const [phase, setPhase] = useState<ComparisonPhase>('idle')
   const [baselineFile, setBaselineFile] = useState<File | null>(null)
   const [candidateFile, setCandidateFile] = useState<File | null>(null)
@@ -105,13 +117,58 @@ export function ImageComparisonPanel({ onMessage }: ImageComparisonPanelProps) {
   }
 
   return (
-    <section className="camera-tool-panel image-comparison-panel" aria-label="本机图片对比">
+    <section className="camera-tool-panel image-comparison-panel" aria-label="本机图片分析">
       <header>
-        <div><GitCompare size={17} aria-hidden="true" /><strong>图片对比</strong></div>
-        <span><ShieldCheck size={13} aria-hidden="true" />Pixelmatch 与图片均留在本机</span>
+        <div><GitCompare size={17} aria-hidden="true" /><strong>图片分析</strong></div>
+        <span><ShieldCheck size={13} aria-hidden="true" />对比、编排、检查与标注像素均留在本机</span>
       </header>
 
-      {phase === 'idle' && (
+      <div className="image-analysis-workspace-tabs" role="group" aria-label="图片分析工具">
+        <button type="button" aria-pressed={workspace === 'compare'} onClick={() => setWorkspace('compare')}>两图像素对比</button>
+        <button type="button" aria-pressed={workspace === 'duplicates'} onClick={() => setWorkspace('duplicates')}>批量重复查找</button>
+        <button type="button" aria-pressed={workspace === 'optimize'} onClick={() => setWorkspace('optimize')}>图片优化</button>
+        <button type="button" aria-pressed={workspace === 'crop'} onClick={() => setWorkspace('crop')}>裁剪旋转</button>
+        <button type="button" aria-pressed={workspace === 'inspect'} onClick={() => setWorkspace('inspect')}>图片检查</button>
+        <button type="button" aria-pressed={workspace === 'annotate'} onClick={() => setWorkspace('annotate')}>图片标注</button>
+        <button type="button" aria-pressed={workspace === 'contact-sheet'} onClick={() => setWorkspace('contact-sheet')}>联系表</button>
+        <button type="button" aria-pressed={workspace === 'long-image'} onClick={() => setWorkspace('long-image')}>长图</button>
+        <button type="button" aria-pressed={workspace === 'adjust'} onClick={() => setWorkspace('adjust')}>调整</button>
+        <button type="button" aria-pressed={workspace === 'watermark'} onClick={() => setWorkspace('watermark')}>水印</button>
+        <button type="button" aria-pressed={workspace === 'batch'} onClick={() => setWorkspace('batch')}>批处理</button>
+      </div>
+
+      <div className="image-analysis-subworkspace image-analysis-duplicate-workspace" hidden={workspace !== 'duplicates'}>
+        <ImageDuplicateFinder onMessage={onMessage} />
+      </div>
+      <div className="image-analysis-subworkspace" hidden={workspace !== 'optimize'}>
+        <ImageOptimizer onMessage={onMessage} />
+      </div>
+      <div className="image-analysis-subworkspace" hidden={workspace !== 'crop'}>
+        <ImageCropPanel onMessage={onMessage} />
+      </div>
+      <div className="image-analysis-subworkspace" hidden={workspace !== 'inspect'}>
+        <ImageInspectionPanel onMessage={onMessage} />
+      </div>
+      <div className="image-analysis-subworkspace" hidden={workspace !== 'annotate'}>
+        <ImageAnnotationPanel onMessage={onMessage} />
+      </div>
+      <div className="image-analysis-subworkspace" hidden={workspace !== 'contact-sheet'}>
+        <ImageContactSheetPanel onMessage={onMessage} />
+      </div>
+      <div className="image-analysis-subworkspace" hidden={workspace !== 'long-image'}>
+        <ImageLongLayoutPanel onMessage={onMessage} />
+      </div>
+      <div className="image-analysis-subworkspace" hidden={workspace !== 'adjust'}>
+        <ImageAdjustmentPanel onMessage={onMessage} />
+      </div>
+      <div className="image-analysis-subworkspace" hidden={workspace !== 'watermark'}>
+        <ImageWatermarkPanel onMessage={onMessage} />
+      </div>
+      <div className="image-analysis-subworkspace" hidden={workspace !== 'batch'}>
+        <ImageBatchProcessorPanel onMessage={onMessage} />
+      </div>
+
+      {workspace === 'compare' && phase === 'idle' && (
         <div className="image-comparison-empty">
           <div className="image-comparison-empty-copy">
             <GitCompare size={25} aria-hidden="true" />
@@ -134,18 +191,18 @@ export function ImageComparisonPanel({ onMessage }: ImageComparisonPanelProps) {
         </div>
       )}
 
-      {phase === 'preparing' && (
+      {workspace === 'compare' && phase === 'preparing' && (
         <div className="image-comparison-loading" role="status" aria-live="polite">
           <span className="small-spinner" aria-hidden="true" />
           <div><strong>正在对齐并比较图片</strong><small>大图会等比例缩小，图片不会上传</small></div>
         </div>
       )}
 
-      {phase === 'error' && (
+      {workspace === 'compare' && phase === 'error' && (
         <div className="ocr-error-state" role="alert"><strong>图片对比失败</strong><span>{error}</span><button type="button" onClick={reset}><RotateCcw size={14} aria-hidden="true" />重新选择</button></div>
       )}
 
-      {phase === 'ready' && prepared && result && (
+      {workspace === 'compare' && phase === 'ready' && prepared && result && (
         <div className="image-comparison-workbench">
           <div className="image-comparison-visual-column">
             <div className="image-comparison-view-tabs" role="group" aria-label="图片对比视图">

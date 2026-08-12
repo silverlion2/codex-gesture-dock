@@ -51,7 +51,12 @@ describe('OcrToolPanel', () => {
 
   it('processes a local file batch sequentially and keeps per-file results', async () => {
     vi.mocked(recognizeLocalFile)
-      .mockResolvedValueOnce({ text: 'First document', pageCount: 1, source: 'ocr' })
+      .mockResolvedValueOnce({
+        text: 'First document',
+        pageCount: 1,
+        source: 'ocr',
+        regions: [{ text: 'F1rst', confidence: 54, lineId: '0-0-0', x0: 10, y0: 20, x1: 70, y1: 45 }],
+      })
       .mockResolvedValueOnce({ text: 'Second document', pageCount: 2, source: 'embedded-text' })
     const onMessage = vi.fn()
     const { container } = render(<OcrToolPanel mode="ocr" onMessage={onMessage} />)
@@ -70,6 +75,14 @@ describe('OcrToolPanel', () => {
     expect(ocrMocks.withLocalOcrSession).toHaveBeenCalledWith('eng+chi_sim', expect.any(Function))
     expect(recognizeLocalFile).toHaveBeenCalledTimes(2)
     expect(screen.getByText('2 / 2 完成')).toBeTruthy()
+    expect((screen.getByRole('textbox', { name: '所选文件 OCR 文本' }) as HTMLTextAreaElement).value).toBe('First document')
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:ocr-preview') })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
+    expect(screen.getByRole('button', { name: '版面 JSON' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '版面 CSV' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '置信度复核 1' }))
+    expect(screen.getByRole('region', { name: 'OCR 置信度复核' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '返回 OCR 文本' }))
     expect((screen.getByRole('textbox', { name: '所选文件 OCR 文本' }) as HTMLTextAreaElement).value).toBe('First document')
     fireEvent.click(screen.getByRole('button', { name: /second\.pdf/ }))
     expect((screen.getByRole('textbox', { name: '所选文件 OCR 文本' }) as HTMLTextAreaElement).value).toBe('Second document')
@@ -142,6 +155,7 @@ describe('OcrToolPanel', () => {
       text: 'Alex Chen\nEngineer\nNorthwind Inc.\nalex@example.com\n+1 555 0100',
       pageCount: 1,
       source: 'ocr',
+      regions: [{ text: 'Eng1neer', confidence: 63, lineId: '0-0-1', x0: 10, y0: 50, x1: 100, y1: 75 }],
     })
     const onMessage = vi.fn()
     const { container } = render(<OcrToolPanel mode="card" onMessage={onMessage} />)
@@ -154,7 +168,15 @@ describe('OcrToolPanel', () => {
 
     await waitFor(() => expect(screen.getByDisplayValue('Alex Chen')).toBeTruthy())
     expect(screen.getByDisplayValue('alex@example.com')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '版面 JSON' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '版面 CSV' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '确认并导出 VCF' })).toBeTruthy()
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:card-preview') })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
+    fireEvent.click(screen.getByRole('button', { name: '置信度复核 1' }))
+    expect(screen.getByRole('region', { name: 'OCR 置信度复核' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '返回 OCR 文本' }))
+    expect(screen.getByDisplayValue('Alex Chen')).toBeTruthy()
     expect(onMessage).toHaveBeenCalledWith('名片已在本机识别，请确认字段后导出')
   })
 })
