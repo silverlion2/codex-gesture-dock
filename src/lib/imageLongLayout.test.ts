@@ -4,10 +4,33 @@ import { describe, expect, it } from 'vitest'
 import {
   computeLongImageJoinLayout,
   computeLongImageSplitLayout,
+  detectLongImageOverlap,
   longImageJoinFilename,
   longImageSplitFilename,
   validateLongImageJoinFiles,
 } from './imageLongLayout'
+
+function verticalScrollSample(start: number, width = 40, height = 100) {
+  const luma = new Uint8Array(width * height)
+  for (let y = 0; y < height; y += 1) {
+    const contentY = start + y
+    for (let x = 0; x < width; x += 1) {
+      luma[y * width + x] = (x * 31 + contentY * 17 + (contentY * contentY * 7) % 251 + (x * contentY) % 43) % 256
+    }
+  }
+  return { width, height, luma }
+}
+
+function horizontalScrollSample(start: number, width = 100, height = 40) {
+  const luma = new Uint8Array(width * height)
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const contentX = start + x
+      luma[y * width + x] = (y * 29 + contentX * 19 + (contentX * contentX * 5) % 241 + (y * contentX) % 47) % 256
+    }
+  }
+  return { width, height, luma }
+}
 
 describe('imageLongLayout', () => {
   it('validates join count and input types', () => {
@@ -68,5 +91,27 @@ describe('imageLongLayout', () => {
   it('creates Windows-safe deterministic filenames', () => {
     expect(longImageJoinFilename('CON.png', 'vertical')).toBe('CON-file-vertical-long-image.png')
     expect(longImageSplitFilename('client<card>.jpg', 1, 12)).toBe('client-card--part-02-of-12.png')
+  })
+
+  it('detects a high-confidence vertical scrolling overlap', () => {
+    const suggestion = detectLongImageOverlap(verticalScrollSample(0), verticalScrollSample(70), 'vertical')
+    expect(suggestion.overlapPercent).toBeGreaterThanOrEqual(29)
+    expect(suggestion.overlapPercent).toBeLessThanOrEqual(31)
+    expect(suggestion.status).toBe('accepted')
+    expect(suggestion.score).toBeGreaterThan(0.98)
+  })
+
+  it('detects a high-confidence horizontal scrolling overlap', () => {
+    const suggestion = detectLongImageOverlap(horizontalScrollSample(0), horizontalScrollSample(75), 'horizontal')
+    expect(suggestion.overlapPercent).toBeGreaterThanOrEqual(24)
+    expect(suggestion.overlapPercent).toBeLessThanOrEqual(26)
+    expect(suggestion.status).toBe('accepted')
+  })
+
+  it('refuses to auto-apply flat or unrelated seams', () => {
+    const flat = { width: 40, height: 100, luma: new Uint8Array(4_000).fill(120) }
+    expect(detectLongImageOverlap(flat, flat, 'vertical').status).toBe('low-texture')
+    const unrelated = verticalScrollSample(800)
+    expect(detectLongImageOverlap(verticalScrollSample(0), unrelated, 'vertical').status).not.toBe('accepted')
   })
 })

@@ -33,6 +33,8 @@ function sameAdjustments(left: ImageAdjustments, right: ImageAdjustments) {
     && left.contrast === right.contrast
     && left.saturation === right.saturation
     && left.temperature === right.temperature
+    && left.hue === right.hue
+    && left.sharpness === right.sharpness
     && left.grayscale === right.grayscale
 }
 
@@ -231,6 +233,8 @@ export function ImageAdjustmentPanel({ onMessage }: ImageAdjustmentPanelProps) {
               <label><span>对比度 <strong>{signed(settings.contrast)}</strong></span><input aria-label="图片对比度" type="range" min="-100" max="100" value={settings.contrast} onChange={(event) => changeSettings({ contrast: Number(event.target.value) })} /></label>
               <label><span>饱和度 <strong>{signed(settings.saturation)}</strong></span><input aria-label="图片饱和度" type="range" min="-100" max="100" value={settings.saturation} onChange={(event) => changeSettings({ saturation: Number(event.target.value) })} /></label>
               <label><span>色温 <strong>{signed(settings.temperature)}</strong></span><input aria-label="图片色温" type="range" min="-100" max="100" value={settings.temperature} onChange={(event) => changeSettings({ temperature: Number(event.target.value) })} /></label>
+              <label><span>色相 <strong>{signed(settings.hue, '°')}</strong></span><input aria-label="图片色相" type="range" min="-180" max="180" value={settings.hue} onChange={(event) => changeSettings({ hue: Number(event.target.value) })} /></label>
+              <label><span>锐化 <strong>{settings.sharpness}%</strong></span><input aria-label="图片锐化" type="range" min="0" max="100" value={settings.sharpness} onChange={(event) => changeSettings({ sharpness: Number(event.target.value) })} /></label>
               <label><span>黑白 <strong>{settings.grayscale}%</strong></span><input aria-label="图片黑白" type="range" min="0" max="100" value={settings.grayscale} onChange={(event) => changeSettings({ grayscale: Number(event.target.value) })} /></label>
             </div>
             <div className="image-adjustment-output-options">
@@ -238,7 +242,7 @@ export function ImageAdjustmentPanel({ onMessage }: ImageAdjustmentPanelProps) {
               <label className={format === 'png' ? 'is-disabled' : ''}><span>质量 {quality}%</span><input aria-label="图片调整导出质量" type="range" min="40" max="100" value={quality} disabled={format === 'png'} onChange={(event) => setQuality(Number(event.target.value))} /></label>
             </div>
             <dl><div><dt>原图</dt><dd>{source.originalWidth} × {source.originalHeight}</dd></div><div><dt>预览</dt><dd>{source.previewWidth} × {source.previewHeight}{source.previewScale < 1 ? ` · ${Math.round(source.previewScale * 100)}%` : ''}</dd></div><div><dt>导出</dt><dd>{source.outputWidth} × {source.outputHeight}{source.outputScale < 1 ? ` · ${Math.round(source.outputScale * 100)}%` : ''}</dd></div></dl>
-            <p>运算顺序固定为曝光 → 对比度 → 色温 → 饱和度 → 黑白。JPEG 会把透明区域合成白色；所有格式都会重新编码且不复制 EXIF/GPS。</p>
+            <p>运算顺序固定为曝光 → 对比度 → 色温 → 色相 → 饱和度 → 黑白 → 锐化。锐化只增强局部边缘，不会恢复已经丢失的细节。JPEG 会把透明区域合成白色；所有格式都会重新编码且不复制 EXIF/GPS。</p>
             <div className="image-adjustment-actions"><button type="button" onClick={() => void createPreview()}><ImageIcon size={14} aria-hidden="true" />{preview ? '重新生成预览' : '生成调整预览'}</button><button type="button" disabled={!preview} onClick={() => void confirmAndExport()}><Download size={14} aria-hidden="true" />确认并导出</button><button type="button" disabled={activePreset === 'neutral'} onClick={() => applyPreset('neutral')}><RotateCcw size={14} aria-hidden="true" />重置参数</button><button type="button" onClick={reset}>选择其他图片</button></div>
           </div>
         </div>

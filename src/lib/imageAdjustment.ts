@@ -12,6 +12,8 @@ export interface ImageAdjustments {
   contrast: number
   saturation: number
   temperature: number
+  hue: number
+  sharpness: number
   grayscale: number
 }
 
@@ -60,16 +62,18 @@ export const neutralImageAdjustments: ImageAdjustments = {
   contrast: 0,
   saturation: 0,
   temperature: 0,
+  hue: 0,
+  sharpness: 0,
   grayscale: 0,
 }
 
 export const imageAdjustmentPresets: Record<ImageAdjustmentPresetKey, ImageAdjustments> = {
   neutral: neutralImageAdjustments,
-  vivid: { exposure: 0.1, contrast: 12, saturation: 24, temperature: 4, grayscale: 0 },
-  warm: { exposure: 0.05, contrast: 5, saturation: 10, temperature: 22, grayscale: 0 },
-  cool: { exposure: 0, contrast: 7, saturation: 6, temperature: -22, grayscale: 0 },
-  mono: { exposure: 0, contrast: 14, saturation: 0, temperature: 0, grayscale: 100 },
-  faded: { exposure: 0.12, contrast: -18, saturation: -22, temperature: 7, grayscale: 0 },
+  vivid: { exposure: 0.1, contrast: 12, saturation: 24, temperature: 4, hue: 0, sharpness: 18, grayscale: 0 },
+  warm: { exposure: 0.05, contrast: 5, saturation: 10, temperature: 22, hue: 0, sharpness: 4, grayscale: 0 },
+  cool: { exposure: 0, contrast: 7, saturation: 6, temperature: -22, hue: 0, sharpness: 6, grayscale: 0 },
+  mono: { exposure: 0, contrast: 14, saturation: 0, temperature: 0, hue: 0, sharpness: 12, grayscale: 100 },
+  faded: { exposure: 0.12, contrast: -18, saturation: -22, temperature: 7, hue: 0, sharpness: 0, grayscale: 0 },
 }
 
 const supportedTypes = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/bmp'])
@@ -80,6 +84,9 @@ interface AdjustmentFactors {
   contrast: number
   saturation: number
   temperature: number
+  hueCos: number
+  hueSin: number
+  sharpness: number
   grayscale: number
 }
 
@@ -97,12 +104,14 @@ export function assertImageAdjustments(settings: ImageAdjustments) {
   for (const [label, value] of [['对比度', settings.contrast], ['饱和度', settings.saturation], ['色温', settings.temperature]] as const) {
     if (!Number.isFinite(value) || value < -100 || value > 100) throw new Error(`${label}必须在 -100–+100 之间`)
   }
+  if (!Number.isFinite(settings.hue) || settings.hue < -180 || settings.hue > 180) throw new Error('色相必须在 -180°–180° 之间')
+  if (!Number.isFinite(settings.sharpness) || settings.sharpness < 0 || settings.sharpness > 100) throw new Error('锐化必须在 0%–100% 之间')
   if (!Number.isFinite(settings.grayscale) || settings.grayscale < 0 || settings.grayscale > 100) throw new Error('黑白必须在 0%–100% 之间')
 }
 
 export function isNeutralImageAdjustment(settings: ImageAdjustments) {
   assertImageAdjustments(settings)
-  return settings.exposure === 0 && settings.contrast === 0 && settings.saturation === 0 && settings.temperature === 0 && settings.grayscale === 0
+  return settings.exposure === 0 && settings.contrast === 0 && settings.saturation === 0 && settings.temperature === 0 && settings.hue === 0 && settings.sharpness === 0 && settings.grayscale === 0
 }
 
 export function computeImageAdjustmentDimensions(
@@ -120,11 +129,15 @@ export function computeImageAdjustmentDimensions(
 function adjustmentFactors(settings: ImageAdjustments): AdjustmentFactors {
   assertImageAdjustments(settings)
   const contrast255 = settings.contrast * 2.55
+  const hueRadians = settings.hue * Math.PI / 180
   return {
     exposure: 2 ** settings.exposure,
     contrast: (259 * (contrast255 + 255)) / (255 * (259 - contrast255)),
     saturation: 1 + settings.saturation / 100,
     temperature: settings.temperature * 0.72,
+    hueCos: Math.cos(hueRadians),
+    hueSin: Math.sin(hueRadians),
+    sharpness: settings.sharpness / 100 * 0.3,
     grayscale: settings.grayscale / 100,
   }
 }
@@ -142,6 +155,21 @@ function processPixelRange(data: Uint8ClampedArray, start: number, end: number, 
     red = factors.contrast * (red - 128) + 128 + factors.temperature
     green = factors.contrast * (green - 128) + 128
     blue = factors.contrast * (blue - 128) + 128 - factors.temperature
+
+    if (factors.hueSin !== 0 || factors.hueCos !== 1) {
+      const sourceRed = red
+      const sourceGreen = green
+      const sourceBlue = blue
+      red = (0.213 + factors.hueCos * 0.787 - factors.hueSin * 0.213) * sourceRed
+        + (0.715 - factors.hueCos * 0.715 - factors.hueSin * 0.715) * sourceGreen
+        + (0.072 - factors.hueCos * 0.072 + factors.hueSin * 0.928) * sourceBlue
+      green = (0.213 - factors.hueCos * 0.213 + factors.hueSin * 0.143) * sourceRed
+        + (0.715 + factors.hueCos * 0.285 + factors.hueSin * 0.140) * sourceGreen
+        + (0.072 - factors.hueCos * 0.072 - factors.hueSin * 0.283) * sourceBlue
+      blue = (0.213 - factors.hueCos * 0.213 - factors.hueSin * 0.787) * sourceRed
+        + (0.715 - factors.hueCos * 0.715 + factors.hueSin * 0.715) * sourceGreen
+        + (0.072 + factors.hueCos * 0.928 + factors.hueSin * 0.072) * sourceBlue
+    }
 
     const saturationLuminance = red * 0.2126 + green * 0.7152 + blue * 0.0722
     red = saturationLuminance + (red - saturationLuminance) * factors.saturation
@@ -161,14 +189,61 @@ function processPixelRange(data: Uint8ClampedArray, start: number, end: number, 
   }
 }
 
-export function adjustImagePixels(source: Uint8ClampedArray, settings: ImageAdjustments) {
-  if (source.length % 4 !== 0) throw new Error('RGBA 像素数据长度无效')
-  const result = new Uint8ClampedArray(source)
-  processPixelRange(result, 0, result.length, adjustmentFactors(settings))
-  return result
+function sharpenRow(
+  pixels: Uint8ClampedArray,
+  previousRow: Uint8ClampedArray,
+  currentRow: Uint8ClampedArray,
+  width: number,
+  y: number,
+  amount: number,
+) {
+  const rowOffset = y * width * 4
+  for (let x = 1; x < width - 1; x += 1) {
+    const rowIndex = x * 4
+    const index = rowOffset + rowIndex
+    for (let channel = 0; channel < 3; channel += 1) {
+      const center = currentRow[rowIndex + channel]
+      pixels[index + channel] = clampChannel(
+        center * (1 + amount * 4)
+        - amount * (
+          currentRow[rowIndex - 4 + channel]
+          + currentRow[rowIndex + 4 + channel]
+          + previousRow[rowIndex + channel]
+          + pixels[index + width * 4 + channel]
+        ),
+      )
+    }
+  }
 }
 
-async function adjustImagePixelsCooperatively(source: Uint8ClampedArray, settings: ImageAdjustments, signal?: AbortSignal) {
+function sharpenPixelsInPlace(source: Uint8ClampedArray, width: number, height: number, amount: number) {
+  if (amount <= 0 || width < 3 || height < 3) return source
+  let previousRow = source.slice(0, width * 4)
+  for (let y = 1; y < height - 1; y += 1) {
+    const currentRow = source.slice(y * width * 4, (y + 1) * width * 4)
+    sharpenRow(source, previousRow, currentRow, width, y, amount)
+    previousRow = currentRow
+  }
+  return source
+}
+
+function assertPixelDimensions(source: Uint8ClampedArray, width: number, height: number) {
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0 || width * height * 4 !== source.length) {
+    throw new Error('RGBA 像素尺寸无效')
+  }
+}
+
+export function adjustImagePixels(source: Uint8ClampedArray, settings: ImageAdjustments, width = source.length / 4, height = 1) {
+  if (source.length % 4 !== 0) throw new Error('RGBA 像素数据长度无效')
+  assertPixelDimensions(source, width, height)
+  const result = new Uint8ClampedArray(source)
+  const factors = adjustmentFactors(settings)
+  processPixelRange(result, 0, result.length, factors)
+  return sharpenPixelsInPlace(result, width, height, factors.sharpness)
+}
+
+async function adjustImagePixelsCooperatively(source: Uint8ClampedArray, settings: ImageAdjustments, width: number, height: number, signal?: AbortSignal) {
+  assertPixelDimensions(source, width, height)
   const result = new Uint8ClampedArray(source)
   const factors = adjustmentFactors(settings)
   const chunkLength = 200_000 * 4
@@ -176,6 +251,20 @@ async function adjustImagePixelsCooperatively(source: Uint8ClampedArray, setting
     throwIfAborted(signal)
     processPixelRange(result, start, Math.min(result.length, start + chunkLength), factors)
     if (start + chunkLength < result.length) await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  }
+  throwIfAborted(signal)
+  if (factors.sharpness <= 0 || width < 3 || height < 3) return result
+  const rowsPerChunk = 32
+  let previousRow = result.slice(0, width * 4)
+  for (let rowStart = 1; rowStart < height - 1; rowStart += rowsPerChunk) {
+    throwIfAborted(signal)
+    const rowEnd = Math.min(height - 1, rowStart + rowsPerChunk)
+    for (let y = rowStart; y < rowEnd; y += 1) {
+      const currentRow = result.slice(y * width * 4, (y + 1) * width * 4)
+      sharpenRow(result, previousRow, currentRow, width, y, factors.sharpness)
+      previousRow = currentRow
+    }
+    if (rowEnd < height - 1) await new Promise<void>((resolve) => setTimeout(resolve, 0))
   }
   throwIfAborted(signal)
   return result
@@ -284,7 +373,7 @@ export async function renderImageAdjustmentPreview(
   settings: ImageAdjustments,
   signal?: AbortSignal,
 ): Promise<RenderedImageAdjustmentPreview> {
-  const pixels = await adjustImagePixelsCooperatively(source.previewPixels, settings, signal)
+  const pixels = await adjustImagePixelsCooperatively(source.previewPixels, settings, source.previewWidth, source.previewHeight, signal)
   const canvas = document.createElement('canvas')
   canvas.width = source.previewWidth
   canvas.height = source.previewHeight
@@ -308,7 +397,7 @@ export async function exportAdjustedImage(
   const dimensions = { width: source.outputWidth, height: source.outputHeight, scale: source.outputScale }
   const { canvas, context } = drawImageToCanvas(image, dimensions)
   const sourcePixels = context.getImageData(0, 0, canvas.width, canvas.height)
-  const adjusted = await adjustImagePixelsCooperatively(sourcePixels.data, settings, signal)
+  const adjusted = await adjustImagePixelsCooperatively(sourcePixels.data, settings, canvas.width, canvas.height, signal)
   context.putImageData(new ImageData(adjusted, canvas.width, canvas.height), 0, 0)
 
   let outputCanvas = canvas

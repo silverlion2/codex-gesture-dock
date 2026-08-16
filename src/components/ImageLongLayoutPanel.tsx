@@ -1,7 +1,8 @@
-import { ArrowDown, ArrowUp, Download, ImageIcon, RotateCcw, Trash2, Upload, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Download, ImageIcon, RotateCcw, Search, Trash2, Upload, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import {
   LONG_IMAGE_MAX_JOIN_FILES,
+  analyzeLongImageOverlaps,
   renderLongImageJoin,
   renderLongImageSplit,
   validateLongImageJoinFiles,
@@ -9,6 +10,7 @@ import {
   type LongImageBackground,
   type LongImageDirection,
   type LongImageJoinOptions,
+  type LongImageOverlapSuggestion,
   type RenderedLongImageJoin,
   type RenderedLongImageSplit,
 } from '../lib/imageLongLayout'
@@ -22,13 +24,14 @@ interface JoinItem {
   file: File
   previewUrl: string
   trimPercent: number
+  overlapSuggestion?: LongImageOverlapSuggestion
 }
 
 type LongImageMode = 'join' | 'split'
-type LongImagePhase = 'idle' | 'editing' | 'rendering' | 'ready' | 'error'
+type LongImagePhase = 'idle' | 'editing' | 'detecting' | 'rendering' | 'ready' | 'error'
 
 const defaultJoinOptions: LongImageJoinOptions = { direction: 'vertical', gap: 0, background: 'light' }
-const trimOptions = [0, 5, 10, 15, 20, 25, 30, 40, 50]
+const trimOptions = Array.from({ length: 51 }, (_, value) => value)
 
 function formatBytes(bytes: number) {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
@@ -81,6 +84,12 @@ export function ImageLongLayoutPanel({ onMessage }: ImageLongLayoutPanelProps) {
     setJoinResult(null)
     setSplitResult(null)
   }
+
+  const clearAutomaticSuggestions = (items: JoinItem[]) => items.map((item, index) => ({
+    ...item,
+    trimPercent: index === 0 ? 0 : item.overlapSuggestion?.status === 'accepted' ? 0 : item.trimPercent,
+    overlapSuggestion: undefined,
+  }))
 
   const reset = (nextMode = mode) => {
     abortRef.current?.abort()
@@ -153,8 +162,7 @@ export function ImageLongLayoutPanel({ onMessage }: ImageLongLayoutPanelProps) {
       const moved = next[index]
       next[index] = next[target]
       next[target] = moved
-      next[0] = { ...next[0], trimPercent: 0 }
-      return next
+      return clearAutomaticSuggestions(next)
     })
     clearResults()
   }
@@ -166,13 +174,50 @@ export function ImageLongLayoutPanel({ onMessage }: ImageLongLayoutPanelProps) {
       URL.revokeObjectURL(removed.previewUrl)
       previewUrlsRef.current = previewUrlsRef.current.filter((url) => url !== removed.previewUrl)
     }
-    setJoinItems((current) => current.filter((item) => item.id !== id).map((item, index) => index === 0 ? { ...item, trimPercent: 0 } : item))
+    setJoinItems((current) => clearAutomaticSuggestions(current.filter((item) => item.id !== id)))
     clearResults()
   }
 
   const updateTrim = (id: string, trimPercent: number) => {
-    setJoinItems((current) => current.map((item, index) => item.id === id ? { ...item, trimPercent: index === 0 ? 0 : trimPercent } : item))
+    setJoinItems((current) => current.map((item, index) => item.id === id ? { ...item, trimPercent: index === 0 ? 0 : trimPercent, overlapSuggestion: undefined } : item))
     clearResults()
+  }
+
+  const detectOverlaps = async () => {
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    setProgress({ completed: 0, total: joinItems.length, filename: joinItems[0]?.file.name ?? '' })
+    setPhase('detecting')
+    setError('')
+    try {
+      const analysis = await analyzeLongImageOverlaps(joinItems.map((item) => item.file), joinOptions.direction, {
+        signal: controller.signal,
+        onProgress: (completed, total, filename) => setProgress({ completed, total, filename }),
+      })
+      if (controller.signal.aborted) return
+      setJoinItems((current) => current.map((item, index) => {
+        if (index === 0) return { ...item, trimPercent: 0, overlapSuggestion: undefined }
+        const suggestion = analysis.suggestions[index - 1]
+        return { ...item, trimPercent: suggestion.status === 'accepted' ? suggestion.overlapPercent : item.trimPercent, overlapSuggestion: suggestion }
+      }))
+      clearResults()
+      setPhase('editing')
+      const uncertain = analysis.suggestions.length - analysis.acceptedCount
+      onMessage(uncertain === 0
+        ? `已自动应用 ${analysis.acceptedCount} 个高置信度接缝；仍请生成预览复核`
+        : `已应用 ${analysis.acceptedCount} 个高置信度接缝；${uncertain} 个低置信度接缝保持原设置`)
+    } catch (caught) {
+      if (controller.signal.aborted) {
+        setPhase('editing')
+        onMessage('已取消自动重叠检测；未更改接缝设置')
+        return
+      }
+      setError(caught instanceof Error ? caught.message : '自动重叠检测失败')
+      setPhase('error')
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null
+    }
   }
 
   const startRender = async () => {
@@ -272,10 +317,10 @@ export function ImageLongLayoutPanel({ onMessage }: ImageLongLayoutPanelProps) {
         </div>
       )}
 
-      {phase === 'rendering' && (
+      {(phase === 'detecting' || phase === 'rendering') && (
         <div className="image-long-layout-loading" role="status" aria-live="polite">
           <span className="small-spinner" aria-hidden="true" />
-          <div><strong>{mode === 'join' ? '正在逐张绘制长图' : '正在逐份生成拆分图片'} {progress.completed} / {progress.total}</strong><small title={progress.filename}>{progress.filename}</small></div>
+          <div><strong>{phase === 'detecting' ? '正在本机分析滚动重叠' : mode === 'join' ? '正在逐张绘制长图' : '正在逐份生成拆分图片'} {progress.completed} / {progress.total}</strong><small title={progress.filename}>{progress.filename}</small></div>
           <button type="button" onClick={() => abortRef.current?.abort()}><X size={14} aria-hidden="true" />取消</button>
         </div>
       )}
@@ -291,14 +336,14 @@ export function ImageLongLayoutPanel({ onMessage }: ImageLongLayoutPanelProps) {
           </div>
           <div className="image-long-layout-controls">
             <div className="image-long-layout-options">
-              <label><span>拼接方向</span><select aria-label="长图拼接方向" value={joinOptions.direction} onChange={(event) => { setJoinOptions((current) => ({ ...current, direction: event.target.value as LongImageDirection })); clearResults() }}><option value="vertical">纵向向下</option><option value="horizontal">横向向右</option></select></label>
+              <label><span>拼接方向</span><select aria-label="长图拼接方向" value={joinOptions.direction} onChange={(event) => { setJoinOptions((current) => ({ ...current, direction: event.target.value as LongImageDirection })); setJoinItems((current) => clearAutomaticSuggestions(current)); clearResults() }}><option value="vertical">纵向向下</option><option value="horizontal">横向向右</option></select></label>
               <label><span>图片间距</span><select aria-label="长图拼接间距" value={joinOptions.gap} onChange={(event) => { setJoinOptions((current) => ({ ...current, gap: Number(event.target.value) as 0 | 8 | 24 })); clearResults() }}><option value="0">无间距</option><option value="8">8 px</option><option value="24">24 px</option></select></label>
               <label><span>间距背景</span><select aria-label="长图拼接背景" value={joinOptions.background} onChange={(event) => { setJoinOptions((current) => ({ ...current, background: event.target.value as LongImageBackground })); clearResults() }}><option value="light">白色</option><option value="dark">深色</option><option value="transparent">透明</option></select></label>
             </div>
             <div className="image-long-layout-order" aria-label="长图拼接图片顺序">
               {joinItems.map((item, index) => (
                 <div key={item.id}>
-                  <span>{index + 1}</span><img src={item.previewUrl} alt="" /><strong title={item.file.name}>{item.file.name}</strong><small>{formatBytes(item.file.size)}</small>
+                  <span>{index + 1}</span><img src={item.previewUrl} alt="" /><strong title={item.file.name}>{item.file.name}</strong><small className={item.overlapSuggestion ? `is-${item.overlapSuggestion.status}` : ''} title={item.overlapSuggestion ? `匹配 ${Math.round(item.overlapSuggestion.score * 100)}%，置信度 ${Math.round(item.overlapSuggestion.confidence * 100)}%` : undefined}>{index > 0 && item.overlapSuggestion ? item.overlapSuggestion.status === 'accepted' ? `自动 ${item.overlapSuggestion.overlapPercent}% · ${Math.round(item.overlapSuggestion.confidence * 100)}%` : item.overlapSuggestion.status === 'low-texture' ? '纹理不足 · 手动' : item.overlapSuggestion.status === 'ambiguous' ? '接缝歧义 · 手动' : '未匹配 · 手动' : formatBytes(item.file.size)}</small>
                   <label><span className="sr-only">裁去 {item.file.name} 开头</span><select aria-label={`裁去 ${item.file.name} 开头`} disabled={index === 0} value={index === 0 ? 0 : item.trimPercent} onChange={(event) => updateTrim(item.id, Number(event.target.value))}>{trimOptions.map((value) => <option key={value} value={value}>{value === 0 ? '不裁去' : `裁去 ${value}%`}</option>)}</select></label>
                   <button type="button" aria-label={`上移 ${item.file.name}`} disabled={index === 0} onClick={() => moveJoinItem(index, -1)}><ArrowUp size={12} aria-hidden="true" /></button>
                   <button type="button" aria-label={`下移 ${item.file.name}`} disabled={index === joinItems.length - 1} onClick={() => moveJoinItem(index, 1)}><ArrowDown size={12} aria-hidden="true" /></button>
@@ -306,8 +351,9 @@ export function ImageLongLayoutPanel({ onMessage }: ImageLongLayoutPanelProps) {
                 </div>
               ))}
             </div>
+            {joinItems.some((item) => item.overlapSuggestion) && <div className="image-long-overlap-summary" role="status"><Search size={13} aria-hidden="true" /><strong>自动检测：{joinItems.filter((item) => item.overlapSuggestion?.status === 'accepted').length} 个已应用</strong><span>{joinItems.filter((item) => item.overlapSuggestion && item.overlapSuggestion.status !== 'accepted').length} 个需手动复核</span></div>}
             <p>第一张保留完整；“裁去开头”只移除后续图片顶部或左侧的重叠区域。生成结果会自动限制到最长边 8192 像素及 2400 万像素。</p>
-            <div className="image-long-layout-actions"><button type="button" onClick={() => void startRender()}><ImageIcon size={14} aria-hidden="true" />生成长图预览</button><label><Upload size={13} aria-hidden="true" />重新选择<input className="sr-only" aria-label="重新选择长图拼接图片" type="file" multiple accept="image/png,image/jpeg,image/webp,image/bmp" onChange={(event) => { chooseJoinFiles([...event.target.files ?? []]); event.target.value = '' }} /></label><button type="button" onClick={() => reset()}>清空</button></div>
+            <div className="image-long-layout-actions"><button type="button" onClick={() => void detectOverlaps()}><Search size={14} aria-hidden="true" />自动检测重叠</button><button type="button" onClick={() => void startRender()}><ImageIcon size={14} aria-hidden="true" />生成长图预览</button><label><Upload size={13} aria-hidden="true" />重新选择<input className="sr-only" aria-label="重新选择长图拼接图片" type="file" multiple accept="image/png,image/jpeg,image/webp,image/bmp" onChange={(event) => { chooseJoinFiles([...event.target.files ?? []]); event.target.value = '' }} /></label><button type="button" onClick={() => reset()}>清空</button></div>
           </div>
         </div>
       )}

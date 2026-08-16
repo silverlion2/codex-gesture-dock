@@ -54,6 +54,8 @@ export function ImageCropPanel({ onMessage }: ImageCropPanelProps) {
   const [source, setSource] = useState<PreparedCropSource | null>(null)
   const [sourceUrl, setSourceUrl] = useState('')
   const [rotation, setRotation] = useState<ImageRotation>(0)
+  const [flipHorizontal, setFlipHorizontal] = useState(false)
+  const [flipVertical, setFlipVertical] = useState(false)
   const [aspectKey, setAspectKey] = useState<AspectKey>('free')
   const [crop, setCrop] = useState<PercentCrop>({ unit: '%', x: 5, y: 5, width: 90, height: 90 })
   const [completedCrop, setCompletedCrop] = useState<PixelCrop | null>(null)
@@ -89,7 +91,12 @@ export function ImageCropPanel({ onMessage }: ImageCropPanelProps) {
 
   useEffect(() => () => abortRef.current?.abort(), [])
 
-  const prepare = async (nextFile: File, nextRotation: ImageRotation) => {
+  const prepare = async (
+    nextFile: File,
+    nextRotation: ImageRotation,
+    nextFlipHorizontal = flipHorizontal,
+    nextFlipVertical = flipVertical,
+  ) => {
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
@@ -97,13 +104,16 @@ export function ImageCropPanel({ onMessage }: ImageCropPanelProps) {
     setError('')
     setResult(null)
     try {
-      const prepared = await prepareCropSource(nextFile, nextRotation, controller.signal)
+      const prepared = await prepareCropSource(nextFile, nextRotation, controller.signal, nextFlipHorizontal, nextFlipVertical)
       if (controller.signal.aborted) return
       setSource(prepared)
       setRotation(nextRotation)
+      setFlipHorizontal(nextFlipHorizontal)
+      setFlipVertical(nextFlipVertical)
       setCompletedCrop(null)
       setPhase('editing')
-      onMessage(nextRotation === 0 ? '图片已在本机载入；请调整裁剪框' : `图片已在本机旋转 ${nextRotation}°；裁剪框已重置`)
+      const transforms = [nextRotation ? `旋转 ${nextRotation}°` : '', nextFlipHorizontal ? '水平翻转' : '', nextFlipVertical ? '垂直翻转' : ''].filter(Boolean)
+      onMessage(transforms.length === 0 ? '图片已在本机载入；请调整裁剪框' : `图片已在本机${transforms.join('、')}；裁剪框已重置`)
     } catch (caught) {
       if (controller.signal.aborted) return
       setError(caught instanceof Error ? caught.message : '无法准备裁剪图片')
@@ -120,6 +130,8 @@ export function ImageCropPanel({ onMessage }: ImageCropPanelProps) {
     setSource(null)
     setResult(null)
     setRotation(0)
+    setFlipHorizontal(false)
+    setFlipVertical(false)
     setAspectKey('free')
     setCrop({ unit: '%', x: 5, y: 5, width: 90, height: 90 })
     setCompletedCrop(null)
@@ -140,7 +152,14 @@ export function ImageCropPanel({ onMessage }: ImageCropPanelProps) {
 
   const rotate = (delta: -90 | 90) => {
     if (!file) return
-    void prepare(file, normalizeRotation(rotation + delta))
+    void prepare(file, normalizeRotation(rotation + delta), flipHorizontal, flipVertical)
+  }
+
+  const flip = (axis: 'horizontal' | 'vertical') => {
+    if (!file) return
+    const nextHorizontal = axis === 'horizontal' ? !flipHorizontal : flipHorizontal
+    const nextVertical = axis === 'vertical' ? !flipVertical : flipVertical
+    void prepare(file, rotation, nextHorizontal, nextVertical)
   }
 
   const createPreview = async () => {
@@ -221,12 +240,12 @@ export function ImageCropPanel({ onMessage }: ImageCropPanelProps) {
           </div>
           <div className="image-crop-controls">
             <div className="image-crop-aspects" role="group" aria-label="裁剪比例">{aspectOptions.map((option) => <button key={option.key} type="button" aria-pressed={aspectKey === option.key} onClick={() => changeAspect(option.key)}>{option.label}</button>)}</div>
-            <div className="image-crop-rotation"><button type="button" onClick={() => rotate(-90)}><RotateCcw size={14} aria-hidden="true" />向左旋转</button><button type="button" onClick={() => rotate(90)}><RotateCw size={14} aria-hidden="true" />向右旋转</button></div>
+            <div className="image-crop-rotation"><button type="button" onClick={() => rotate(-90)}><RotateCcw size={14} aria-hidden="true" />向左旋转</button><button type="button" onClick={() => rotate(90)}><RotateCw size={14} aria-hidden="true" />向右旋转</button><button type="button" aria-pressed={flipHorizontal} onClick={() => flip('horizontal')}>水平翻转</button><button type="button" aria-pressed={flipVertical} onClick={() => flip('vertical')}>垂直翻转</button></div>
             <div className="image-crop-output-options">
               <label><span>输出格式</span><select aria-label="裁剪输出格式" value={format} onChange={(event) => setFormat(event.target.value as ImageOutputFormat)}><option value="png">PNG</option><option value="jpeg">JPEG</option><option value="webp">WebP</option></select></label>
               <label className={format === 'png' ? 'is-disabled' : ''}><span>品质 {quality}%</span><input aria-label="裁剪输出品质" type="range" min="40" max="100" value={quality} disabled={format === 'png'} onChange={(event) => setQuality(Number(event.target.value))} /></label>
             </div>
-            <dl><div><dt>工作尺寸</dt><dd>{source.width} × {source.height}</dd></div><div><dt>旋转</dt><dd>{rotation}°</dd></div><div><dt>原图缩放</dt><dd>{source.scale < 1 ? `${Math.round(source.scale * 100)}% 安全缩放` : '100%'}</dd></div></dl>
+            <dl><div><dt>工作尺寸</dt><dd>{source.width} × {source.height}</dd></div><div><dt>旋转</dt><dd>{rotation}°</dd></div><div><dt>翻转</dt><dd>{flipHorizontal || flipVertical ? [flipHorizontal ? '水平' : '', flipVertical ? '垂直' : ''].filter(Boolean).join(' + ') : '无'}</dd></div><div><dt>原图缩放</dt><dd>{source.scale < 1 ? `${Math.round(source.scale * 100)}% 安全缩放` : '100%'}</dd></div></dl>
             <p>方向键微调选中裁剪框；JPEG 会把透明区域合成白色。工作图受 8192 像素/2400 万像素上限约束。</p>
             <div className="image-crop-actions"><button type="button" disabled={!completedCrop} onClick={() => void createPreview()}><ImageIcon size={14} aria-hidden="true" />生成裁剪预览</button><button type="button" onClick={reset}>选择其他图片</button></div>
           </div>

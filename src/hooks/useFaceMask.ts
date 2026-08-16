@@ -7,6 +7,7 @@ import {
   type FaceMaskExpression,
   type FaceMaskStyle,
 } from '../lib/faceMasks'
+import { loadVisionRuntime } from '../lib/visionRuntime'
 
 export type FaceMaskPhase = 'idle' | 'loading' | 'tracking' | 'searching' | 'error'
 
@@ -107,7 +108,7 @@ export function useFaceMask({ active, videoRef, canvasRef, style }: UseFaceMaskO
     const start = async () => {
       try {
         if (!landmarkerRef.current) {
-          const { FaceLandmarker, FilesetResolver } = await import('@mediapipe/tasks-vision')
+          const { FaceLandmarker, FilesetResolver } = await loadVisionRuntime()
           const vision = await FilesetResolver.forVisionTasks(new URL('./wasm/', window.location.href).toString())
           const landmarker = await FaceLandmarker.createFromOptions(vision, {
             baseOptions: {

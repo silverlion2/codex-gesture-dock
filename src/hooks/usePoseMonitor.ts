@@ -1,8 +1,4 @@
-import {
-  DrawingUtils,
-  FilesetResolver,
-  PoseLandmarker,
-} from '@mediapipe/tasks-vision'
+import type { PoseLandmarker } from '@mediapipe/tasks-vision'
 import {
   useCallback,
   useEffect,
@@ -21,6 +17,7 @@ import {
   type PostureStatus,
 } from '../lib/posture'
 import { addDailySample, loadDailyStats, ratioFromStats } from '../lib/storage'
+import { loadVisionRuntime } from '../lib/visionRuntime'
 
 export type MonitorPhase =
   | 'idle'
@@ -92,6 +89,7 @@ export function usePoseMonitor({
   const scoreRef = useRef<number | null>(null)
   const presenceRef = useRef(false)
   const landmarkerRef = useRef<PoseLandmarker | null>(null)
+  const visionRuntimeRef = useRef<Awaited<ReturnType<typeof loadVisionRuntime>> | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const frameRef = useRef<number | null>(null)
   const lastInferenceRef = useRef(Number.NEGATIVE_INFINITY)
@@ -146,7 +144,8 @@ export function usePoseMonitor({
       }
 
       const context = canvas.getContext('2d')
-      if (!context) return
+      const visionRuntime = visionRuntimeRef.current
+      if (!context || !visionRuntime) return
       context.clearRect(0, 0, canvas.width, canvas.height)
 
       const color =
@@ -156,8 +155,8 @@ export function usePoseMonitor({
             ? '#e8a31a'
             : '#35d477'
 
-      const drawing = new DrawingUtils(context)
-      drawing.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS, {
+      const drawing = new visionRuntime.DrawingUtils(context)
+      drawing.drawConnectors(landmarks, visionRuntime.PoseLandmarker.POSE_CONNECTIONS, {
         color,
         lineWidth: 4,
       })
@@ -293,7 +292,9 @@ export function usePoseMonitor({
       './models/pose_landmarker_lite.task',
       window.location.href,
     ).toString()
-    const vision = await FilesetResolver.forVisionTasks(wasmRoot)
+    const visionRuntime = await loadVisionRuntime()
+    visionRuntimeRef.current = visionRuntime
+    const vision = await visionRuntime.FilesetResolver.forVisionTasks(wasmRoot)
     const baseOptions = {
       modelAssetPath: modelPath,
     }
@@ -301,7 +302,7 @@ export function usePoseMonitor({
     // MediaPipe's GPU delegate can stay pending indefinitely on some Windows
     // graphics drivers. The CPU path is fast enough for our throttled posture
     // sampling and, more importantly, always settles so the camera can start.
-    const landmarker = await PoseLandmarker.createFromOptions(vision, {
+    const landmarker = await visionRuntime.PoseLandmarker.createFromOptions(vision, {
       baseOptions,
       runningMode: 'VIDEO',
       numPoses: 1,

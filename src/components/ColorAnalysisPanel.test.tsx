@@ -11,6 +11,10 @@ const colorMocks = vi.hoisted(() => ({
   json: vi.fn(() => '[{"hex":"#336699"}]'),
 }))
 
+const visionMocks = vi.hoisted(() => ({
+  render: vi.fn(),
+}))
+
 vi.mock('../lib/colorAnalysis', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/colorAnalysis')>()
   return {
@@ -20,6 +24,11 @@ vi.mock('../lib/colorAnalysis', async (importOriginal) => {
     paletteCss: colorMocks.css,
     paletteJson: colorMocks.json,
   }
+})
+
+vi.mock('../lib/colorVisionSimulation', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/colorVisionSimulation')>()
+  return { ...actual, renderColorVisionPng: visionMocks.render }
 })
 
 const dominant = {
@@ -49,6 +58,7 @@ const prepared = {
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
+  vi.restoreAllMocks()
 })
 
 describe('ColorAnalysisPanel', () => {
@@ -104,5 +114,39 @@ describe('ColorAnalysisPanel', () => {
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('无法读取图片：broken.png'))
     fireEvent.click(screen.getByRole('button', { name: '重新选择' }))
     expect(screen.getByText('从图片提取代表色并检查文字对比度')).toBeTruthy()
+  })
+
+  it('creates a cancellable local color-vision preview and explicit PNG export', async () => {
+    colorMocks.prepare.mockResolvedValue(prepared)
+    visionMocks.render.mockResolvedValue(new Blob(['simulated'], { type: 'image/png' }))
+    const createObjectUrl = vi.fn(() => `blob:color-vision-${Math.random()}`)
+    const revokeObjectUrl = vi.fn()
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectUrl })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectUrl })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    const onMessage = vi.fn()
+    render(<ColorAnalysisPanel onMessage={onMessage} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '色觉预览' }))
+    expect(screen.getByText('预览常见色觉缺失下的图片辨识效果')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('选择颜色分析图片'), {
+      target: { files: [new File(['image'], 'design.png', { type: 'image/png' })] },
+    })
+
+    await waitFor(() => expect(screen.getByRole('img', { name: '绿色觉缺失（Deutan） 100% 模拟图' })).toBeTruthy())
+    expect(visionMocks.render).toHaveBeenCalledWith(prepared.pixels, 8, 6, 'deutan', 1, expect.any(AbortSignal))
+    expect(screen.getByText(/Viénot 1999/)).toBeTruthy()
+
+    fireEvent.change(screen.getByLabelText('色觉模拟强度'), { target: { value: '60' } })
+    fireEvent.click(screen.getByRole('radio', { name: '蓝色觉缺失（Tritan）' }))
+    await waitFor(() => expect(screen.getByRole('img', { name: '蓝色觉缺失（Tritan） 60% 模拟图' })).toBeTruthy())
+    expect(visionMocks.render).toHaveBeenLastCalledWith(prepared.pixels, 8, 6, 'tritan', 0.6, expect.any(AbortSignal))
+    expect(screen.getByText(/Brettel 1997/)).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '确认并导出模拟 PNG' }))
+    expect(click).toHaveBeenCalledTimes(1)
+    expect(onMessage).toHaveBeenCalledWith('已请求下载色觉模拟 PNG；该图只用于人工无障碍复核')
+    fireEvent.click(screen.getByRole('button', { name: '重新选择' }))
+    expect(revokeObjectUrl).toHaveBeenCalled()
   })
 })

@@ -1,4 +1,5 @@
-import { FilesetResolver, ObjectDetector } from '@mediapipe/tasks-vision'
+import type { ObjectDetector } from '@mediapipe/tasks-vision'
+import { loadVisionRuntime } from './visionRuntime'
 
 export interface DetectedObject {
   id: string
@@ -51,7 +52,9 @@ const labelTranslations: Record<string, string> = {
   vase: '花瓶', scissors: '剪刀', 'teddy bear': '泰迪熊', 'hair drier': '吹风机', toothbrush: '牙刷',
 }
 
-let visionFilesetPromise: ReturnType<typeof FilesetResolver.forVisionTasks> | null = null
+type VisionFileset = Awaited<ReturnType<(typeof import('@mediapipe/tasks-vision'))['FilesetResolver']['forVisionTasks']>>
+
+let visionFilesetPromise: Promise<VisionFileset> | null = null
 let bundledDetectorPromise: Promise<ObjectDetector> | null = null
 let customDetectorEntry: { id: string; promise: Promise<ObjectDetector> } | null = null
 let customModelSequence = 0
@@ -71,7 +74,7 @@ function loadImage(dataUrl: string) {
 
 async function getVisionFileset() {
   if (!visionFilesetPromise) {
-    visionFilesetPromise = FilesetResolver.forVisionTasks(localAsset('./wasm/'))
+    visionFilesetPromise = loadVisionRuntime().then(({ FilesetResolver }) => FilesetResolver.forVisionTasks(localAsset('./wasm/')))
   }
   try {
     return await visionFilesetPromise
@@ -79,6 +82,11 @@ async function getVisionFileset() {
     visionFilesetPromise = null
     throw error
   }
+}
+
+async function createDetector(model: ObjectDetectionModel) {
+  const [{ ObjectDetector }, vision] = await Promise.all([loadVisionRuntime(), getVisionFileset()])
+  return ObjectDetector.createFromOptions(vision, detectorOptions(model))
 }
 
 function detectorOptions(model: ObjectDetectionModel) {
@@ -100,7 +108,7 @@ function closeDetectorEntry(entry: { promise: Promise<ObjectDetector> } | null) 
 async function getDetector(model: ObjectDetectionModel) {
   if (model.kind === 'bundled') {
     if (!bundledDetectorPromise) {
-      bundledDetectorPromise = getVisionFileset().then((vision) => ObjectDetector.createFromOptions(vision, detectorOptions(model)))
+      bundledDetectorPromise = createDetector(model)
     }
     try {
       return await bundledDetectorPromise
@@ -115,7 +123,7 @@ async function getDetector(model: ObjectDetectionModel) {
     closeDetectorEntry(customDetectorEntry)
     customDetectorEntry = {
       id: model.id,
-      promise: getVisionFileset().then((vision) => ObjectDetector.createFromOptions(vision, detectorOptions(model))),
+      promise: createDetector(model),
     }
   }
   const entry = customDetectorEntry

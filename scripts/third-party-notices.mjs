@@ -38,6 +38,16 @@ const licenseOverrides = new Map(
     'Apache-2.0',
   ]),
 )
+const bundledAssets = [
+  {
+    name: 'Noto Sans SC Variable',
+    version: 'google-fonts@2894aab31764',
+    license: 'OFL-1.1',
+    assetPath: path.join(projectRoot, 'public', 'fonts', 'NotoSansSC-VF.ttf'),
+    licensePath: path.join(projectRoot, 'third_party_licenses', 'Noto-Sans-SC-OFL-1.1.txt'),
+    sha256: 'a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da',
+  },
+]
 
 if (!npmCli) {
   throw new Error('Run this command through npm so npm_execpath is available.')
@@ -69,6 +79,27 @@ async function findLicenseFiles(packageDirectory) {
 const inventory = []
 const licenseSections = []
 const missingLicenses = []
+
+for (const asset of bundledAssets) {
+  const assetContents = await readFile(asset.assetPath)
+  const assetDigest = createHash('sha256').update(assetContents).digest('hex')
+  if (assetDigest !== asset.sha256) {
+    throw new Error(`${path.relative(projectRoot, asset.assetPath)} does not match its approved SHA-256.`)
+  }
+  const licenseContents = (await readFile(asset.licensePath, 'utf8')).trim()
+  inventory.push({ name: asset.name, version: asset.version, license: asset.license })
+  licenseSections.push(
+    [
+      '='.repeat(80),
+      `${asset.name}@${asset.version} — ${asset.license}`,
+      `Source file: ${path.relative(projectRoot, asset.licensePath)}`,
+      `Asset SHA-256: ${assetDigest}`,
+      '='.repeat(80),
+      licenseContents,
+      '',
+    ].join('\n'),
+  )
+}
 
 for (const entry of packages) {
   const license = licenseOverrides.get(entry.name) || String(entry.license || 'UNKNOWN')
@@ -127,9 +158,9 @@ const table = inventory
 
 const notices = `# Third-party notices
 
-Codex Gesture Dock includes the production dependencies below. This inventory is
-generated from the installed production dependency graph for version
-${packageJson.version}; CI rejects stale output.
+Codex Gesture Dock includes the production dependencies and bundled assets below.
+This inventory is generated from the installed production dependency graph and
+verified asset hashes for version ${packageJson.version}; CI rejects stale output.
 
 | Component | Version | License |
 | --- | --- | --- |
@@ -151,6 +182,11 @@ recognition. Its source model card is:
 https://storage.googleapis.com/mediapipe-assets/Model%20Card%20MediaPipe%20Selfie%20Segmentation.pdf
 Codex Gesture Dock does not transmit camera frames or selected photos to a
 remote service.
+
+The bundled Noto Sans SC variable font is loaded only when the user exports a
+searchable scanned PDF. jsPDF embeds only the glyph subset used by that PDF's
+local OCR text layer. Source revision:
+https://github.com/google/fonts/commit/2894aab31764f10f29c421bdfd2340d3b382d384
 `
 
 const bundle = `Production dependency license texts for Codex Gesture Dock ${packageJson.version}
@@ -173,10 +209,10 @@ if (process.argv.includes('--check')) {
       throw new Error(`${path.relative(projectRoot, outputPath)} is stale.`)
     }
   }
-  console.log(`Third-party notices are current for ${inventory.length} packages.`)
+  console.log(`Third-party notices are current for ${inventory.length} components.`)
 } else {
   for (const [outputPath, contents] of outputs) {
     await writeFile(outputPath, contents, 'utf8')
   }
-  console.log(`Generated third-party notices for ${inventory.length} packages.`)
+  console.log(`Generated third-party notices for ${inventory.length} components.`)
 }

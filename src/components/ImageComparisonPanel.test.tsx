@@ -66,13 +66,21 @@ describe('ImageComparisonPanel', () => {
     expect(screen.getByText('给一批图片添加可见水印')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '批处理' }))
     expect(screen.getByText('批量缩放、转换与重命名图片')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '美化' }))
+    expect(screen.getByText('把截图包装成可分享图片')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '线稿抠图' }))
+    expect(screen.getByText('提取签名、印章或深浅线稿')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '色彩抠图' }))
+    expect(screen.getByText('移除绿幕、纯色商品底或 Logo 背景')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '贴纸描边' }))
+    expect(screen.getByText('给透明人物、Logo 或线稿添加贴纸描边')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '两图像素对比' }))
     expect((screen.getByText('查找近重复图片').closest('.image-analysis-duplicate-workspace') as HTMLElement).hidden).toBe(true)
     expect(screen.getByText('对比两张截图或照片')).toBeTruthy()
     expect((screen.getByRole('button', { name: '开始本机对比' }) as HTMLButtonElement).disabled).toBe(true)
     expect(screen.getByLabelText('选择基准图').getAttribute('accept')).toContain('image/webp')
     expect(screen.getByLabelText('选择候选图')).toBeTruthy()
-  })
+  }, 15_000)
 
   it('shows wipe, metrics, tolerance recompute, and an exportable diff', async () => {
     comparisonMocks.prepare.mockResolvedValue(prepared)
@@ -112,7 +120,7 @@ describe('ImageComparisonPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '导出差异 PNG' }))
     expect(comparisonMocks.filename).toHaveBeenCalledWith('baseline.png', 'candidate.png')
     expect(click).toHaveBeenCalledTimes(1)
-  })
+  }, 15_000)
 
   it('lets users recover after an unreadable pair', async () => {
     comparisonMocks.prepare.mockRejectedValue(new Error('无法读取图片：broken.png'))

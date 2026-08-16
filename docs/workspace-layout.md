@@ -2,13 +2,21 @@
 
 ```text
 src/                    React UI、MediaPipe hooks、状态机和组件测试
+src/lib/visionRuntime.ts MediaPipe Tasks 的单一可重试动态导入边界，供姿态、手势、面具、人脸、背景与物体工具共享
 src/lib/piiSuggestions.ts 扫描页 OCR 坐标的本机敏感信息建议与遮盖框生成
 src/lib/ocrConfidence.ts OCR 词级置信度摘要、低分排序、坐标限制与归一化
-src/lib/ocrLayoutExport.ts OCR 原始词框的版本化 JSON/公式安全 CSV、像素与归一化坐标及安全文件名
+src/lib/ocrCorrections.ts OCR 逐词修正的顺序精确匹配、来源保留、空值删除与失败关闭边界
+src/lib/businessCard.ts 单张/批量名片的确定性字段解析、vCard 3.0 转义、安全文件名与 1–20 联系人合并
+src/lib/ocrLayoutExport.ts OCR 当前词框的版本化 JSON、公式安全 CSV、来源字段、转义单页/多页 hOCR 与 ALTO 4.4 页面/行/词结构及安全文件名
+src/lib/ocrTable.ts OCR 词框的保守行列间隔聚类、最大简单表格候选、可编辑矩形 CSV 与公式安全文件名
+src/lib/searchableDocumentPdf.ts 扫描栅格、逐词复核文字及原坐标、混合中英文 run 与离线子集字体生成可搜索 PDF
+src/components/OcrLayoutExportActions.tsx 版面 JSON/CSV 动作及简单表格模态逐格复核、失败关闭和明确导出
 src/lib/documentScanner.ts 照片/PDF 栅格导入、OpenCV 扫描、永久遮盖与 PNG/PDF 导出
 src/lib/documentQuality.ts 扫描原图的有界亮度、对比度、清晰度、分辨率与局部高光启发式分析
 src/lib/mrzExtraction.ts 文件/扫描页 OCR 的 TD1/TD2/TD3 候选提取、字段校验与复核 JSON
 src/lib/codeImageScanner.ts 用户选择图片的一次性本机 QR/条码解码与资源释放
+src/lib/qrCodeCreator.ts 文字/HTTP(S)/Wi-Fi/vCard QR payload 校验、转义与本机 ZXing SVG writer
+src/components/QrCodeCreatorPanel.tsx QR 类型表单、可撤销 SVG 预览与显式 SVG/PNG/剪贴板输出
 src/lib/imageMetadata.ts  用户选择照片的常见 EXIF/GPS 隐私字段检查与无元数据导出文件名
 src/lib/imageComparison.ts 两张本机图片的有界归一化、Pixelmatch 差异指标、热图与安全导出文件名
 src/lib/imageSimilarity.ts 批量图片的 128 位双方向 dHash、SHA-256 精确摘要、Hamming 距离与候选排序
@@ -21,10 +29,20 @@ src/lib/imageLongLayout.ts 2–12 图纵横拼接、手动起始裁去、连续�
 src/lib/imageAdjustment.ts 单图确定性曝光/对比度/色温/饱和度/灰度、分块处理、有界预览与 PNG/JPEG/WebP 导出
 src/lib/imageWatermark.ts 1–12 图文字/Logo 九宫格或平铺水印、有界逐张 Canvas 渲染与安全 PNG/JPEG/WebP 文件名
 src/lib/imageBatchProcessor.ts 1–20 图批量缩放/格式转换、碰撞安全编号命名、合计体积门禁与逐张处理适配
+src/lib/screenshotBeautifier.ts 截图渐变/纯色背景、比例扩展、留白、圆角、阴影、窗口装饰与有界 PNG/JPEG/WebP 渲染
+src/lib/imageInkExtraction.ts 浅/深背景亮度 alpha、柔化、透明 RGB 清理、裁边留白、分块取消与有界透明 PNG 输出
+src/components/ImageInkExtractionPanel.tsx 签名/印章/线稿源图与棋盘格预览、参数门禁、复核边界和明确透明 PNG 导出
+src/lib/imageColorKey.ts OKLab 感知色距、alpha 加权取样、色键柔化、中间-alpha 等亮溢色中和、透明 RGB 清理、分块取消与有界透明 PNG 输出
+src/components/ImageColorKeyPanel.tsx 绿幕/纯色背景取样、棋盘格预览、全局同色风险和明确透明 PNG 导出
+src/lib/imageStickerOutline.ts 透明边界扫描、两遍 3-4 chamfer 距离描边、主体裁边、百分比留白、分行取消与安全透明 PNG
+src/components/ImageStickerOutlinePanel.tsx 人物/Logo/线稿贴纸描边、棋盘格/白/黑底复核、参数门禁和明确透明 PNG 导出
 src/lib/colorAnalysis.ts 用户图片的有界白底归一化、OKLCH 调色板、点取样、WCAG 对比与 CSS/JSON 序列化
+src/lib/colorVisionSimulation.ts 公共领域 Viénot/Brettel 线性 sRGB 色觉近似、分块取消与 PNG 输出
+src/components/ColorVisionSimulatorPanel.tsx 原图/模拟图复核、类型/强度控制、方法边界与明确 PNG 导出
 electron/               Electron main/preload、Codex/Windows 控制和单元测试
 public/models/           本地 MediaPipe 姿态、手势、BlazeFace 人脸检测、SelfieSegmenter 人物分割与 EfficientDet-Lite0 物体检测模型
 public/wasm/             本地 MediaPipe WASM runtime
+public/fonts/            可搜索 PDF 明确导出时按需载入的哈希固定 OFL 字体
 tests/e2e/               Playwright Chromium 与 axe 测试
 tests/fixtures/          不含真实个人信息的本机 OCR/视觉回归样本
 scripts/                 构建、发布、签名、安装和审计脚本

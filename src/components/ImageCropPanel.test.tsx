@@ -25,6 +25,8 @@ const source = {
   width: 1200,
   height: 800,
   rotation: 0,
+  flipHorizontal: false,
+  flipVertical: false,
   scale: 1,
 }
 
@@ -49,7 +51,7 @@ describe('ImageCropPanel', () => {
     const file = new File(['source'], 'sample.png', { type: 'image/png' })
     fireEvent.change(screen.getByLabelText('选择待裁剪图片'), { target: { files: [file] } })
     await waitFor(() => expect(screen.getByAltText('待裁剪图片')).toBeTruthy())
-    expect(cropMocks.prepare).toHaveBeenCalledWith(file, 0, expect.any(AbortSignal))
+    expect(cropMocks.prepare).toHaveBeenCalledWith(file, 0, expect.any(AbortSignal), false, false)
 
     const image = screen.getByAltText('待裁剪图片') as HTMLImageElement
     Object.defineProperties(image, {
@@ -71,7 +73,7 @@ describe('ImageCropPanel', () => {
     expect(onMessage).toHaveBeenCalledWith('已导出 sample-cropped.png；源图片未被修改')
   })
 
-  it('resets the crop after rotation and exposes format controls', async () => {
+  it('resets the crop after rotation or flip and exposes format controls', async () => {
     cropMocks.prepare.mockResolvedValue(source)
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:source')
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
@@ -82,7 +84,9 @@ describe('ImageCropPanel', () => {
     fireEvent.change(screen.getByRole('combobox', { name: '裁剪输出格式' }), { target: { value: 'jpeg' } })
     expect((screen.getByRole('slider', { name: '裁剪输出品质' }) as HTMLInputElement).disabled).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: '向右旋转' }))
-    await waitFor(() => expect(cropMocks.prepare).toHaveBeenLastCalledWith(file, 90, expect.any(AbortSignal)))
+    await waitFor(() => expect(cropMocks.prepare).toHaveBeenLastCalledWith(file, 90, expect.any(AbortSignal), false, false))
+    fireEvent.click(screen.getByRole('button', { name: '水平翻转' }))
+    await waitFor(() => expect(cropMocks.prepare).toHaveBeenLastCalledWith(file, 90, expect.any(AbortSignal), true, false))
   })
 
   it('shows a recoverable input error', async () => {

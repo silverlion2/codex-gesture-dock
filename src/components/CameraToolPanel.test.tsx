@@ -2,11 +2,13 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { decodeCodeImage } from '../lib/codeImageScanner'
+import { codeScanBatchCsv, decodeCodeImage, decodeCodeImageBatch } from '../lib/codeImageScanner'
 import { CameraToolPanel } from './CameraToolPanel'
 
 vi.mock('../lib/codeImageScanner', () => ({
   decodeCodeImage: vi.fn(),
+  decodeCodeImageBatch: vi.fn(),
+  codeScanBatchCsv: vi.fn(),
 }))
 
 afterEach(() => {
@@ -33,6 +35,16 @@ function renderCodePanel(onMessage = vi.fn()) {
 }
 
 describe('CameraToolPanel image scanning', () => {
+  it('switches between local scanning and offline QR creation without starting the camera', () => {
+    renderCodePanel()
+    expect(screen.getByText(/单张或批量 2–20 张/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '生成 QR' }))
+    expect(screen.getByText('待生成二维码')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '扫描识别' }).getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(screen.getByRole('button', { name: '扫描识别' }))
+    expect(screen.getByText(/单张或批量 2–20 张/)).toBeTruthy()
+  })
+
   it('decodes a local image without requiring the camera', async () => {
     vi.mocked(decodeCodeImage).mockResolvedValue({ text: 'LOCAL-QR-123', format: 'QR_CODE' })
     const onMessage = vi.fn()
@@ -58,5 +70,23 @@ describe('CameraToolPanel image scanning', () => {
 
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('图片中未找到'))
     expect(screen.getByText(/启动摄像头继续实时扫描/)).toBeTruthy()
+  })
+
+  it('scans multiple images, reports partial success, and exports CSV', async () => {
+    vi.mocked(decodeCodeImageBatch).mockResolvedValue([
+      { filename: 'a.png', status: 'detected', text: 'A-123', format: 'QR_CODE', error: '' },
+      { filename: 'b.png', status: 'not-found', text: '', format: '', error: '图片中未找到可识别的二维码或条码' },
+    ])
+    vi.mocked(codeScanBatchCsv).mockReturnValue('\uFEFFcsv')
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:csv')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    const { container } = renderCodePanel()
+    fireEvent.change(container.querySelector<HTMLInputElement>('input[type="file"]')!, { target: { files: [new File(['a'], 'a.png', { type: 'image/png' }), new File(['b'], 'b.png', { type: 'image/png' })] } })
+    await waitFor(() => expect(screen.getByText('1/2 成功')).toBeTruthy())
+    expect(screen.getByText('A-123')).toBeTruthy()
+    expect(screen.getByText('未找到码')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '导出 CSV' }))
+    await waitFor(() => expect(click).toHaveBeenCalledTimes(1))
   })
 })

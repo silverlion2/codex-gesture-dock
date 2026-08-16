@@ -13,6 +13,8 @@ export interface PreparedCropSource {
   width: number
   height: number
   rotation: ImageRotation
+  flipHorizontal: boolean
+  flipVertical: boolean
   scale: number
 }
 
@@ -110,7 +112,13 @@ export function croppedImageFilename(filename: string, format: ImageOutputFormat
   return `${safeStem(filename)}-cropped.${format === 'jpeg' ? 'jpg' : format}`
 }
 
-export async function prepareCropSource(file: File, rotation: ImageRotation, signal?: AbortSignal): Promise<PreparedCropSource> {
+export async function prepareCropSource(
+  file: File,
+  rotation: ImageRotation,
+  signal?: AbortSignal,
+  flipHorizontal = false,
+  flipVertical = false,
+): Promise<PreparedCropSource> {
   assertImageFile(file)
   const image = await loadBlobImage(file, file.name)
   if (signal?.aborted) throw new DOMException('已取消图片准备', 'AbortError')
@@ -122,6 +130,7 @@ export async function prepareCropSource(file: File, rotation: ImageRotation, sig
   const context = canvas.getContext('2d')
   if (!context) throw new Error('当前设备无法创建裁剪画布')
   context.translate(outputSize.width / 2, outputSize.height / 2)
+  context.scale(flipHorizontal ? -1 : 1, flipVertical ? -1 : 1)
   context.rotate(rotation * Math.PI / 180)
   context.imageSmoothingEnabled = true
   context.imageSmoothingQuality = 'high'
@@ -136,6 +145,8 @@ export async function prepareCropSource(file: File, rotation: ImageRotation, sig
     width: outputSize.width,
     height: outputSize.height,
     rotation,
+    flipHorizontal,
+    flipVertical,
     scale: safeSize.scale,
   }
 }
@@ -185,4 +196,3 @@ export async function renderCroppedImage(
     quality: format === 'png' ? null : quality,
   }
 }
-

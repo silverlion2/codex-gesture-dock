@@ -16,6 +16,7 @@ import {
   type LocalOcrRecognizer,
   type OcrLanguage,
 } from '../lib/localOcr'
+import { downloadSearchableScannedPdf } from '../lib/searchableDocumentPdf'
 import { DocumentToolPanel } from './DocumentToolPanel'
 
 const ocrMocks = vi.hoisted(() => ({
@@ -37,6 +38,11 @@ vi.mock('../lib/documentScanner', async (importOriginal) => ({
 vi.mock('../lib/localOcr', () => ({
   recognizeLocalFile: ocrMocks.recognizeLocalFile,
   withLocalOcrSession: ocrMocks.withLocalOcrSession,
+}))
+
+vi.mock('../lib/searchableDocumentPdf', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../lib/searchableDocumentPdf')>(),
+  downloadSearchableScannedPdf: vi.fn(),
 }))
 
 afterEach(() => {
@@ -100,7 +106,7 @@ describe('DocumentToolPanel', () => {
     vi.mocked(scanCapturedDocument).mockResolvedValue(page)
     vi.mocked(downloadScannedPdf).mockResolvedValue(undefined)
     vi.mocked(recognizeLocalFile).mockResolvedValue({
-      text: 'Northwind Cafe\nInvoice # QA-2026-0808\nDate 2026-08-08\nSubtotal $ 128.00\nTax $ 12.80\nGrand Total $ 140.80',
+      text: 'Northwind Cafe\nInvoice # QA-2026-0808\nDate 2026-08-08\nSubtotal $ 128.00\nTax $ 12.80\nGrand T0tal $ 140.80',
       pageCount: 1,
       source: 'ocr',
       regions: [
@@ -125,6 +131,7 @@ describe('DocumentToolPanel', () => {
     })
 
     await waitFor(() => expect(screen.getByRole('button', { name: '1 页 PDF' })).toBeTruthy())
+    expect((screen.getByRole('button', { name: '可搜索 PDF 0/1' }) as HTMLButtonElement).disabled).toBe(true)
     expect(screen.getByAltText('第 1 页扫描预览')).toBeTruthy()
     expect(screen.getByText('原图质量良好')).toBeTruthy()
     expect(onMessage).toHaveBeenCalledWith('已检测纸张边缘并完成透视矫正')
@@ -133,29 +140,51 @@ describe('DocumentToolPanel', () => {
     await waitFor(() => expect(downloadScannedPdf).toHaveBeenCalledWith([page]))
 
     fireEvent.click(screen.getByRole('button', { name: 'OCR 本页' }))
-    await waitFor(() => expect((screen.getByRole('textbox', { name: '当前扫描页 OCR 文本' }) as HTMLTextAreaElement).value).toContain('Grand Total $ 140.80'))
+    await waitFor(() => expect((screen.getByRole('textbox', { name: '当前扫描页 OCR 文本' }) as HTMLTextAreaElement).value).toContain('Grand T0tal $ 140.80'))
     expect(recognizeLocalFile).toHaveBeenCalledWith(expect.any(File), 'eng+chi_sim', expect.any(Function), expect.any(AbortSignal))
+    expect((screen.getByRole('button', { name: '可搜索 PDF 1/1' }) as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: '可搜索 PDF 1/1' }))
+    await waitFor(() => expect(downloadSearchableScannedPdf).toHaveBeenCalledWith([
+      expect.objectContaining({
+        page,
+        regions: expect.arrayContaining([expect.objectContaining({ text: 'billing@northwind.test' })]),
+      }),
+    ], { onProgress: expect.any(Function) }))
+    expect(onMessage).toHaveBeenCalledWith('已生成 1 页本机可搜索 PDF；文字层来自当前逐词复核结果与原坐标')
 
     fireEvent.click(screen.getByRole('button', { name: '置信度复核 1' }))
     expect(screen.getByRole('region', { name: 'OCR 置信度复核' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '复核文字 T0tal，置信度 58%' })).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: '返回 OCR 文本' }))
+    fireEvent.change(screen.getByRole('textbox', { name: '校正文字 T0tal' }), { target: { value: 'Total' } })
+    fireEvent.click(screen.getByRole('button', { name: '记录此词' }))
+    fireEvent.click(screen.getByRole('button', { name: '应用 1 项复核' }))
+    await waitFor(() => expect((screen.getByRole('textbox', { name: '当前扫描页 OCR 文本' }) as HTMLTextAreaElement).value).toContain('Grand Total $ 140.80'))
+    expect(onMessage).toHaveBeenCalledWith('已应用 1 项逐词复核，其中 1 项改字；版面与可搜索 PDF 将使用校正词')
+    fireEvent.click(screen.getByRole('button', { name: '可搜索 PDF 1/1' }))
+    await waitFor(() => expect(downloadSearchableScannedPdf).toHaveBeenLastCalledWith([
+      expect.objectContaining({ regions: expect.arrayContaining([expect.objectContaining({ text: 'Total', recognizedText: 'T0tal', humanReviewed: true })]) }),
+    ], { onProgress: expect.any(Function) }))
 
     fireEvent.change(screen.getByRole('textbox', { name: '当前扫描页 OCR 文本' }), {
       target: { value: 'Reviewed Cafe\nInvoice # QA-2026-0808\nDate 2026-08-08\nSubtotal $ 128.00\nTax $ 12.80\nGrand Total $ 140.80' },
     })
     expect(screen.getByText(/已人工修正 · 复制、提取与 TXT 将使用当前文本/)).toBeTruthy()
+    expect(screen.getByText(/逐词复核会同步版面与可搜索 PDF/)).toBeTruthy()
     expect(screen.getByRole('button', { name: '版面 JSON' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '版面 CSV' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '版面 hOCR' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '版面 ALTO' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '表格辅助' })).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: '提取票据' }))
     expect(screen.getByRole('region', { name: '票据结构化字段' })).toBeTruthy()
     expect((screen.getByRole('textbox', { name: '商户 / 公司' }) as HTMLInputElement).value).toBe('Reviewed Cafe')
     expect((screen.getByRole('textbox', { name: '总额' }) as HTMLInputElement).value).toBe('140.80')
     fireEvent.click(screen.getByRole('button', { name: '返回扫描页' }))
-    fireEvent.click(screen.getByRole('button', { name: '恢复识别文本' }))
+    fireEvent.click(screen.getByRole('button', { name: '恢复识别文本与词框' }))
     expect((screen.getByRole('textbox', { name: '当前扫描页 OCR 文本' }) as HTMLTextAreaElement).value).toContain('Northwind Cafe')
-    expect(onMessage).toHaveBeenCalledWith('已恢复当前页的本机 OCR 原始文本')
+    expect((screen.getByRole('textbox', { name: '当前扫描页 OCR 文本' }) as HTMLTextAreaElement).value).toContain('Grand T0tal')
+    expect(onMessage).toHaveBeenCalledWith('已恢复当前页的本机 OCR 原始文本与词框')
 
     fireEvent.click(screen.getByRole('button', { name: '复核 1 处敏感信息' }))
     expect(screen.getByRole('dialog', { name: '文档隐私遮盖' })).toBeTruthy()
@@ -180,6 +209,28 @@ describe('DocumentToolPanel', () => {
     expect(screen.getByText('边缘检测与导出均在本机')).toBeTruthy()
   })
 
+  it('uses the selected Traditional Chinese language for subsequent scanned-page OCR', async () => {
+    vi.mocked(captureFromImageFile).mockResolvedValue({ dataUrl: page.sourceDataUrl, filename: 'traditional.png' })
+    vi.mocked(scanCapturedDocument).mockResolvedValue(page)
+    vi.mocked(recognizeLocalFile).mockResolvedValue({
+      text: '繁體文字',
+      pageCount: 1,
+      source: 'ocr',
+      regions: [{ text: '繁體', confidence: 92, lineId: 'line-1', x0: 10, y0: 10, x1: 70, y1: 35 }],
+    })
+    const { container } = render(
+      <DocumentToolPanel videoRef={{ current: null }} mirrored={false} sessionReady={false} onMessage={vi.fn()} />,
+    )
+    fireEvent.change(container.querySelector<HTMLInputElement>('input[type="file"]')!, {
+      target: { files: [new File(['image'], 'traditional.png', { type: 'image/png' })] },
+    })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'OCR 本页' })).toBeTruthy())
+    fireEvent.change(screen.getByRole('combobox', { name: '扫描页 OCR 语言' }), { target: { value: 'eng+chi_tra' } })
+    fireEvent.click(screen.getByRole('button', { name: 'OCR 本页' }))
+    await waitFor(() => expect(screen.getByDisplayValue('繁體文字')).toBeTruthy())
+    expect(recognizeLocalFile).toHaveBeenCalledWith(expect.any(File), 'eng+chi_tra', expect.any(Function), expect.any(AbortSignal))
+  })
+
   it('shows advisory quality problems without disabling OCR or export', async () => {
     const poorPage = {
       ...page,
@@ -194,7 +245,8 @@ describe('DocumentToolPanel', () => {
     }
     vi.mocked(captureFromImageFile).mockResolvedValue({ dataUrl: page.sourceDataUrl, filename: 'blurred.png' })
     vi.mocked(scanCapturedDocument).mockResolvedValue(poorPage)
-    const { container } = render(<DocumentToolPanel videoRef={{ current: null }} mirrored={false} sessionReady={false} onMessage={vi.fn()} />)
+    const onMessage = vi.fn()
+    const { container } = render(<DocumentToolPanel videoRef={{ current: null }} mirrored={false} sessionReady={false} onMessage={onMessage} />)
 
     fireEvent.change(container.querySelector<HTMLInputElement>('input[type="file"]')!, {
       target: { files: [new File(['image'], 'blurred.png', { type: 'image/png' })] },
@@ -204,6 +256,8 @@ describe('DocumentToolPanel', () => {
     expect(screen.getByText('疑似局部反光')).toBeTruthy()
     expect((screen.getByRole('button', { name: 'OCR 本页' }) as HTMLButtonElement).disabled).toBe(false)
     expect((screen.getByRole('button', { name: '1 页 PDF' }) as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: '下一质量问题页 1' }))
+    expect(onMessage).toHaveBeenCalledWith('已定位第 1 页；发现 2 项拍摄质量建议')
   })
 
   it('rotates a reviewed page, preserves its transformed redactions, and clears stale OCR', async () => {
@@ -321,7 +375,12 @@ describe('DocumentToolPanel', () => {
       { dataUrl: secondPage.sourceDataUrl, filename: 'report-page-2.png' },
     ])
     vi.mocked(scanCapturedDocument).mockResolvedValueOnce(page).mockResolvedValueOnce(secondPage)
-    vi.mocked(recognizeLocalFile).mockResolvedValue({ text: 'second page OCR', pageCount: 1, source: 'ocr', regions: [] })
+    vi.mocked(recognizeLocalFile).mockResolvedValue({
+      text: 'second page OCR',
+      pageCount: 1,
+      source: 'ocr',
+      regions: [{ text: 'privacy@example.com', confidence: 93, lineId: 'line-1', x0: 10, y0: 10, x1: 170, y1: 32 }],
+    })
     vi.mocked(downloadScannedPdf).mockResolvedValue(undefined)
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:document-ocr')
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
@@ -347,6 +406,10 @@ describe('DocumentToolPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'OCR 本页' }))
     await waitFor(() => expect(screen.getByDisplayValue('second page OCR')).toBeTruthy())
     expect((screen.getByRole('button', { name: 'OCR TXT 1/2' }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByRole('button', { name: '多页 hOCR 1/2' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: '多页 ALTO 1/2' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: '多页 JSON 1/2' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: '多页 CSV 1/2' }) as HTMLButtonElement).disabled).toBe(true)
     fireEvent.change(screen.getByRole('textbox', { name: '当前扫描页 OCR 文本' }), { target: { value: 'reviewed second page' } })
 
     fireEvent.click(screen.getByRole('button', { name: '1', pressed: false }))
@@ -379,9 +442,40 @@ describe('DocumentToolPanel', () => {
     expect(recognizeLocalFile).toHaveBeenCalledTimes(2)
     expect(onMessage).toHaveBeenCalledWith('已完成其余 1 页 OCR；全部 2 页已有文本')
     expect((screen.getByRole('button', { name: 'OCR 未识别页 0' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: '多页 hOCR 2/2' }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByRole('button', { name: '多页 ALTO 2/2' }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByRole('button', { name: '多页 JSON 2/2' }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByRole('button', { name: '多页 CSV 2/2' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.getByRole('button', { name: '下一敏感页 2 处 / 2 页' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '下一敏感页 2 处 / 2 页' }))
+    expect(screen.getByRole('dialog', { name: '文档隐私遮盖' })).toBeTruthy()
+    expect(onMessage).toHaveBeenCalledWith('已定位第 2 页的 1 处疑似敏感信息；请逐项调整、删除或确认')
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+
+    fireEvent.change(screen.getByRole('searchbox', { name: '搜索全部扫描页 OCR' }), { target: { value: 'page' } })
+    expect(screen.getByRole('button', { name: '下一匹配页 2' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '下一匹配页 2' }))
+    expect(onMessage).toHaveBeenCalledWith('已定位第 1 页；此页有 1 处文字匹配')
 
     fireEvent.click(screen.getByRole('button', { name: 'OCR TXT 2/2' }))
     expect(onMessage).toHaveBeenCalledWith('已按当前页序导出 2 页 OCR 文本')
+
+    fireEvent.click(screen.getByRole('button', { name: '多页 JSON 2/2' }))
+    expect(downloadedFilename).toBe('report-page-2-all-pages-ocr-layout.json')
+    expect(onMessage).toHaveBeenCalledWith('已按当前页序导出 2 页 JSON 版面')
+
+    fireEvent.click(screen.getByRole('button', { name: '多页 CSV 2/2' }))
+    expect(downloadedFilename).toBe('report-page-2-all-pages-ocr-layout.csv')
+    expect(onMessage).toHaveBeenCalledWith('已按当前页序导出 2 页 CSV 版面')
+
+    fireEvent.click(screen.getByRole('button', { name: '多页 hOCR 2/2' }))
+    expect(downloadedFilename).toBe('report-page-2-all-pages-ocr-layout.hocr')
+    expect(onMessage).toHaveBeenCalledWith('已按当前页序导出 2 页 hOCR 版面')
+
+    fireEvent.click(screen.getByRole('button', { name: '多页 ALTO 2/2' }))
+    expect(downloadedFilename).toBe('report-page-2-all-pages-ocr-layout.alto.xml')
+    expect(onMessage).toHaveBeenCalledWith('已按当前页序导出 2 页 ALTO 4.4 版面')
   })
 
   it('lets keyboard users correct detected corners and reprocess the page', async () => {

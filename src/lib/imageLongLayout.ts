@@ -4,6 +4,9 @@ export const LONG_IMAGE_MAX_TOTAL_BYTES = 160 * 1024 * 1024
 export const LONG_IMAGE_MAX_SOURCE_PIXELS = 80_000_000
 export const LONG_IMAGE_MAX_SIDE = 8_192
 export const LONG_IMAGE_MAX_PIXELS = 24_000_000
+export const LONG_IMAGE_OVERLAP_MIN_PERCENT = 5
+export const LONG_IMAGE_OVERLAP_MAX_PERCENT = 50
+export const LONG_IMAGE_OVERLAP_ACCEPT_SCORE = 0.93
 
 export type LongImageDirection = 'vertical' | 'horizontal'
 export type LongImageBackground = 'light' | 'dark' | 'transparent'
@@ -76,8 +79,35 @@ export interface RenderedLongImageSplit {
   scale: number
 }
 
+export interface LongImageOverlapSample {
+  width: number
+  height: number
+  luma: Uint8Array
+}
+
+export type LongImageOverlapStatus = 'accepted' | 'low-texture' | 'ambiguous' | 'not-found'
+
+export interface LongImageOverlapSuggestion {
+  index: number
+  overlapPercent: number
+  score: number
+  confidence: number
+  texture: number
+  crossShift: number
+  status: LongImageOverlapStatus
+}
+
+export interface LongImageOverlapAnalysis {
+  suggestions: LongImageOverlapSuggestion[]
+  acceptedCount: number
+}
+
 interface RenderHooks {
   signal?: AbortSignal
+  onProgress?: (completed: number, total: number, filename: string) => void
+}
+
+interface OverlapAnalysisHooks extends RenderHooks {
   onProgress?: (completed: number, total: number, filename: string) => void
 }
 
@@ -94,6 +124,118 @@ function assertDirection(direction: LongImageDirection) {
 function assertDimensions({ width, height }: LongImageDimensions) {
   if (![width, height].every((value) => Number.isFinite(value) && value > 0)) throw new Error('图片尺寸无效')
   if (width * height > LONG_IMAGE_MAX_SOURCE_PIXELS) throw new Error('图片解码后超过 8000 万像素安全上限')
+}
+
+function assertOverlapSample(sample: LongImageOverlapSample) {
+  assertDimensions(sample)
+  if (sample.luma.length !== sample.width * sample.height) throw new Error('重叠分析像素数量与尺寸不一致')
+}
+
+function sampleLuma(sample: LongImageOverlapSample, x: number, y: number) {
+  const px = Math.max(0, Math.min(sample.width - 1, Math.round(x)))
+  const py = Math.max(0, Math.min(sample.height - 1, Math.round(y)))
+  return sample.luma[py * sample.width + px]
+}
+
+interface OverlapCandidate {
+  overlapPercent: number
+  score: number
+  texture: number
+  crossShift: number
+}
+
+function scoreOverlapCandidate(
+  previous: LongImageOverlapSample,
+  next: LongImageOverlapSample,
+  direction: LongImageDirection,
+  overlapPercent: number,
+): OverlapCandidate {
+  const vertical = direction === 'vertical'
+  const mainSamples = 32
+  const crossSamples = 40
+  const previousMainSize = vertical ? previous.height : previous.width
+  const nextMainSize = vertical ? next.height : next.width
+  const previousOverlapSize = Math.max(1, Math.round(previousMainSize * overlapPercent / 100))
+  const nextOverlapSize = Math.max(1, Math.round(nextMainSize * overlapPercent / 100))
+  let best: OverlapCandidate = { overlapPercent, score: -1, texture: 0, crossShift: 0 }
+  for (let shift = -3; shift <= 3; shift += 1) {
+    const a: number[] = []
+    const b: number[] = []
+    for (let mainIndex = 0; mainIndex < mainSamples; mainIndex += 1) {
+      const mainRatio = (mainIndex + 0.5) / mainSamples
+      const previousMain = previousMainSize - previousOverlapSize + mainRatio * Math.max(0, previousOverlapSize - 1)
+      const nextMain = mainRatio * Math.max(0, nextOverlapSize - 1)
+      for (let crossIndex = 4; crossIndex < crossSamples - 4; crossIndex += 1) {
+        const previousCrossRatio = (crossIndex + 0.5) / crossSamples
+        const nextCrossRatio = (crossIndex + shift + 0.5) / crossSamples
+        if (nextCrossRatio <= 0 || nextCrossRatio >= 1) continue
+        const previousX = vertical ? previousCrossRatio * (previous.width - 1) : previousMain
+        const previousY = vertical ? previousMain : previousCrossRatio * (previous.height - 1)
+        const nextX = vertical ? nextCrossRatio * (next.width - 1) : nextMain
+        const nextY = vertical ? nextMain : nextCrossRatio * (next.height - 1)
+        a.push(sampleLuma(previous, previousX, previousY))
+        b.push(sampleLuma(next, nextX, nextY))
+      }
+    }
+    const meanA = a.reduce((sum, value) => sum + value, 0) / a.length
+    const meanB = b.reduce((sum, value) => sum + value, 0) / b.length
+    let covariance = 0
+    let varianceA = 0
+    let varianceB = 0
+    let centeredDifference = 0
+    for (let index = 0; index < a.length; index += 1) {
+      const da = a[index] - meanA
+      const db = b[index] - meanB
+      covariance += da * db
+      varianceA += da * da
+      varianceB += db * db
+      centeredDifference += Math.abs(da - db)
+    }
+    const standardA = Math.sqrt(varianceA / a.length)
+    const standardB = Math.sqrt(varianceB / b.length)
+    const texture = Math.min(standardA, standardB)
+    const denominator = Math.sqrt(varianceA * varianceB)
+    const correlation = denominator > 0 ? covariance / denominator : 0
+    const differenceSimilarity = Math.max(0, 1 - centeredDifference / a.length / 80)
+    const score = Math.max(0, Math.min(1, correlation * 0.82 + differenceSimilarity * 0.18))
+    if (score > best.score) best = { overlapPercent, score, texture, crossShift: shift }
+  }
+  return best
+}
+
+export function detectLongImageOverlap(
+  previous: LongImageOverlapSample,
+  next: LongImageOverlapSample,
+  direction: LongImageDirection,
+  index = 1,
+): LongImageOverlapSuggestion {
+  assertOverlapSample(previous)
+  assertOverlapSample(next)
+  assertDirection(direction)
+  const candidates: OverlapCandidate[] = []
+  for (let overlapPercent = LONG_IMAGE_OVERLAP_MIN_PERCENT; overlapPercent <= LONG_IMAGE_OVERLAP_MAX_PERCENT; overlapPercent += 1) {
+    candidates.push(scoreOverlapCandidate(previous, next, direction, overlapPercent))
+  }
+  candidates.sort((a, b) => b.score - a.score)
+  const best = candidates[0]
+  const runnerUp = candidates.find((candidate) => Math.abs(candidate.overlapPercent - best.overlapPercent) > 2) ?? candidates[1]
+  const margin = Math.max(0, best.score - runnerUp.score)
+  const textureFactor = Math.min(1, best.texture / 14)
+  const marginFactor = Math.min(1, margin / 0.08)
+  const confidence = Math.max(0, Math.min(1, best.score * textureFactor * marginFactor))
+  let status: LongImageOverlapStatus = 'accepted'
+  if (best.texture < 6) status = 'low-texture'
+  else if (best.score < LONG_IMAGE_OVERLAP_ACCEPT_SCORE) status = 'not-found'
+  else if (margin < 0.025 || confidence < 0.58) status = 'ambiguous'
+  return {
+    index,
+    overlapPercent: best.overlapPercent,
+    score: best.score,
+    confidence,
+    texture: best.texture,
+    crossShift: best.crossShift,
+    status,
+  }
 }
 
 function assertFile(file: File) {
@@ -255,6 +397,45 @@ function loadFileImage(file: File, signal?: AbortSignal) {
     signal?.addEventListener('abort', handleAbort, { once: true })
     image.src = url
   })
+}
+
+function createOverlapSample(image: HTMLImageElement, direction: LongImageDirection) {
+  const vertical = direction === 'vertical'
+  const width = vertical ? Math.min(96, image.naturalWidth) : Math.min(512, image.naturalWidth)
+  const height = vertical ? Math.min(512, image.naturalHeight) : Math.min(96, image.naturalHeight)
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const context = canvas.getContext('2d', { willReadFrequently: true })
+  if (!context) throw new Error('当前设备无法创建重叠分析画布')
+  context.fillStyle = '#ffffff'
+  context.fillRect(0, 0, width, height)
+  context.drawImage(image, 0, 0, width, height)
+  const pixels = context.getImageData(0, 0, width, height).data
+  const luma = new Uint8Array(width * height)
+  for (let index = 0; index < luma.length; index += 1) {
+    const offset = index * 4
+    luma[index] = Math.round(pixels[offset] * 0.2126 + pixels[offset + 1] * 0.7152 + pixels[offset + 2] * 0.0722)
+  }
+  return { width, height, luma }
+}
+
+export async function analyzeLongImageOverlaps(
+  files: File[],
+  direction: LongImageDirection,
+  { signal, onProgress }: OverlapAnalysisHooks = {},
+): Promise<LongImageOverlapAnalysis> {
+  validateLongImageJoinFiles(files)
+  assertDirection(direction)
+  const samples: LongImageOverlapSample[] = []
+  for (let index = 0; index < files.length; index += 1) {
+    throwIfAborted(signal)
+    const image = await loadFileImage(files[index], signal)
+    samples.push(createOverlapSample(image, direction))
+    onProgress?.(index + 1, files.length, files[index].name)
+  }
+  const suggestions = samples.slice(1).map((sample, index) => detectLongImageOverlap(samples[index], sample, direction, index + 1))
+  return { suggestions, acceptedCount: suggestions.filter((suggestion) => suggestion.status === 'accepted').length }
 }
 
 function canvasToPng(canvas: HTMLCanvasElement, signal?: AbortSignal) {

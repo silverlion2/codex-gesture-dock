@@ -12,6 +12,7 @@ import {
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import {
   buildVCard,
+  buildVCardBundle,
   businessCardFilename,
   parseBusinessCard,
   type BusinessCardFields,
@@ -26,6 +27,7 @@ import {
   type OcrResult,
 } from '../lib/localOcr'
 import { summarizeOcrConfidence } from '../lib/ocrConfidence'
+import { applyOcrWordCorrections, type OcrWordCorrection } from '../lib/ocrCorrections'
 import { OcrConfidenceReview } from './OcrConfidenceReview'
 import { OcrLayoutExportActions } from './OcrLayoutExportActions'
 
@@ -43,6 +45,7 @@ interface BatchOcrItem {
   file: File
   phase: BatchItemPhase
   result?: OcrResult
+  card?: BusinessCardFields
   error?: string
 }
 
@@ -87,7 +90,7 @@ function batchId() {
     : `ocr-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
-function BatchOcrPanel({ onMessage }: Pick<OcrToolPanelProps, 'onMessage'>) {
+function BatchOcrPanel({ mode, onMessage }: OcrToolPanelProps) {
   const [language, setLanguage] = useState<OcrLanguage>('eng+chi_sim')
   const [items, setItems] = useState<BatchOcrItem[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -99,6 +102,7 @@ function BatchOcrPanel({ onMessage }: Pick<OcrToolPanelProps, 'onMessage'>) {
   const [confidenceReviewId, setConfidenceReviewId] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const mountedRef = useRef(true)
+  const isCard = mode === 'card'
 
   useEffect(() => {
     mountedRef.current = true
@@ -134,7 +138,12 @@ function BatchOcrPanel({ onMessage }: Pick<OcrToolPanelProps, 'onMessage'>) {
           const result = await recognize(item.file, setProgress, controller.signal)
           if (controller.signal.aborted) break
           successCount += 1
-          setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, phase: 'success', result } : entry))
+          setItems((current) => current.map((entry) => entry.id === item.id ? {
+            ...entry,
+            phase: 'success',
+            result,
+            ...(isCard ? { card: parseBusinessCard(result.text) } : {}),
+          } : entry))
           setSelectedId((current) => current ?? item.id)
         } catch (caught) {
           if (controller.signal.aborted) break
@@ -153,9 +162,11 @@ function BatchOcrPanel({ onMessage }: Pick<OcrToolPanelProps, 'onMessage'>) {
       setItems((current) => current.map((item) => item.phase === 'queued' || item.phase === 'recognizing'
         ? { ...item, phase: 'cancelled' }
         : item))
-      onMessage('已取消批量 OCR；已完成结果仍保留在本机')
+      onMessage(isCard ? '已取消批量名片 OCR；已完成联系人仍保留在本机' : '已取消批量 OCR；已完成结果仍保留在本机')
     } else {
-      onMessage(`批量 OCR 已完成：成功 ${successCount} 个，失败 ${errorCount} 个`)
+      onMessage(isCard
+        ? `批量名片 OCR 已完成：成功 ${successCount} 张，失败 ${errorCount} 张；请逐张确认字段`
+        : `批量 OCR 已完成：成功 ${successCount} 个，失败 ${errorCount} 个`)
     }
     if (abortRef.current === controller) abortRef.current = null
     if (mountedRef.current) setRunning(false)
@@ -195,6 +206,32 @@ function BatchOcrPanel({ onMessage }: Pick<OcrToolPanelProps, 'onMessage'>) {
     }
   }
 
+  const applySelectedCorrections = (corrections: OcrWordCorrection[]) => {
+    if (!confidenceReviewItem?.result?.regions) return
+    const corrected = applyOcrWordCorrections(
+      confidenceReviewItem.result.text,
+      confidenceReviewItem.result.regions,
+      corrections,
+    )
+    setItems((current) => current.map((item) => item.id === confidenceReviewItem.id && item.result
+      ? {
+          ...item,
+          result: { ...item.result, text: corrected.text, regions: corrected.regions },
+          ...(isCard ? { card: parseBusinessCard(corrected.text) } : {}),
+        }
+      : item))
+    onMessage(isCard
+      ? `已应用 ${corrected.reviewedCount} 项名片逐词复核，其中 ${corrected.changedCount} 项改字；字段与版面导出已重新同步`
+      : `已应用 ${corrected.reviewedCount} 项逐词复核，其中 ${corrected.changedCount} 项改字；TXT 与版面导出已同步`)
+  }
+
+  const updateSelectedCard = (field: keyof BusinessCardFields, value: string) => {
+    if (!selectedId) return
+    setItems((current) => current.map((item) => item.id === selectedId && item.card
+      ? { ...item, card: { ...item.card, [field]: value } }
+      : item))
+  }
+
   const reviewSelectedMrz = async () => {
     if (!selected?.result) return
     const { extractMrz } = await import('../lib/mrzExtraction')
@@ -222,9 +259,9 @@ function BatchOcrPanel({ onMessage }: Pick<OcrToolPanelProps, 'onMessage'>) {
   }
 
   return (
-    <section className="camera-tool-panel ocr-tool-panel batch-ocr-panel" aria-label="文件 OCR">
+    <section className="camera-tool-panel ocr-tool-panel batch-ocr-panel" aria-label={isCard ? '名片 OCR' : '文件 OCR'}>
       <header>
-        <div><FileText size={17} aria-hidden="true" /><strong>批量文件 OCR</strong></div>
+        <div>{isCard ? <ContactRound size={17} aria-hidden="true" /> : <FileText size={17} aria-hidden="true" />}<strong>{isCard ? '批量名片 OCR' : '批量文件 OCR'}</strong></div>
         <span><ShieldCheck size={13} aria-hidden="true" />模型与文件均留在本机</span>
       </header>
 
@@ -234,13 +271,14 @@ function BatchOcrPanel({ onMessage }: Pick<OcrToolPanelProps, 'onMessage'>) {
           sourceLabel={confidenceReviewItem.file.name}
           regions={confidenceReviewItem.result.regions}
           onClose={() => setConfidenceReviewId(null)}
+          onApplyCorrections={applySelectedCorrections}
         />
       ) : items.length === 0 ? (
         <div className="ocr-start-state">
           <div>
-            <FileText size={25} aria-hidden="true" />
-            <strong>导入图像或 PDF</strong>
-            <small>可一次选择多个文件；每个 PDF 最多 20 页、每个文件最大 35 MB</small>
+            {isCard ? <ContactRound size={25} aria-hidden="true" /> : <FileText size={25} aria-hidden="true" />}
+            <strong>{isCard ? '导入一批名片照片' : '导入图像或 PDF'}</strong>
+            <small>{isCard ? '一次最多 20 张；逐张确认字段后可分别或合并导出 VCF' : '可一次选择多个文件；每个 PDF 最多 20 页、每个文件最大 35 MB'}</small>
           </div>
           <div className="ocr-input-row">
             <label>
@@ -250,12 +288,12 @@ function BatchOcrPanel({ onMessage }: Pick<OcrToolPanelProps, 'onMessage'>) {
               </select>
             </label>
             <label className="ocr-upload-button">
-              <Upload size={14} aria-hidden="true" />选择多个文件
+              <Upload size={14} aria-hidden="true" />{isCard ? '选择名片照片' : '选择多个文件'}
               <input
                 className="sr-only"
                 type="file"
                 multiple
-                accept="application/pdf,image/png,image/jpeg,image/webp,image/bmp,.pdf"
+                accept={isCard ? 'image/png,image/jpeg,image/webp,image/bmp' : 'application/pdf,image/png,image/jpeg,image/webp,image/bmp,.pdf'}
                 onChange={(event) => {
                   const selectedFiles = Array.from(event.target.files ?? [])
                   if (selectedFiles.length > 0) void recognizeBatch(selectedFiles)
@@ -278,7 +316,7 @@ function BatchOcrPanel({ onMessage }: Pick<OcrToolPanelProps, 'onMessage'>) {
           </div>
           <i className="batch-ocr-progress" aria-hidden="true"><b style={{ width: `${running ? overallProgress : 100}%` }} /></i>
           <div className="batch-ocr-content">
-            <div className="batch-ocr-list" aria-label="批量 OCR 文件">
+            <div className="batch-ocr-list" aria-label={isCard ? '批量名片文件' : '批量 OCR 文件'}>
               {items.map((item, index) => (
                 <button
                   key={item.id}
@@ -296,21 +334,38 @@ function BatchOcrPanel({ onMessage }: Pick<OcrToolPanelProps, 'onMessage'>) {
             </div>
             <div className="batch-ocr-result">
               {selected?.result ? (
-                <>
-                  <div><strong>{selected.file.name}</strong><small>{selected.result.source === 'embedded-text' ? 'PDF 文本层' : selected.result.source === 'mixed' ? '文本层 + OCR' : '本地 OCR'}{selected.result.regions?.length ? ' · 版面导出使用原始词框' : ''}</small></div>
-                  <textarea aria-label="所选文件 OCR 文本" value={selected.result.text} readOnly />
-                </>
-              ) : <p>{running ? '完成的文件会在这里显示识别文本。' : '没有可显示的识别结果。'}</p>}
+                isCard && selected.card ? (
+                  <>
+                    <div><strong>{selected.file.name}</strong><small>本机规则已预填；须对照名片逐项确认{selected.result.regions?.length ? ' · 逐词复核会重新解析字段' : ''}</small></div>
+                    <div className="card-fields batch-card-fields">
+                      {(Object.keys(selected.card) as Array<keyof BusinessCardFields>).map((field) => (
+                        <label key={field} className={field === 'address' || field === 'notes' ? 'is-wide' : ''}>
+                          <span>{{ name: '姓名', organization: '公司', title: '职位', phone: '电话', email: '邮箱', website: '网站', address: '地址', notes: '备注' }[field]}</span>
+                          <input aria-label={`所选名片${{ name: '姓名', organization: '公司', title: '职位', phone: '电话', email: '邮箱', website: '网站', address: '地址', notes: '备注' }[field]}`} value={(selected.card as BusinessCardFields)[field]} onChange={(event) => updateSelectedCard(field, event.target.value)} />
+                        </label>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div><strong>{selected.file.name}</strong><small>{selected.result.source === 'embedded-text' ? 'PDF 文本层' : selected.result.source === 'mixed' ? '文本层 + OCR' : '本地 OCR'}{selected.result.regions?.length ? ' · 逐词复核会同步 TXT 与版面导出' : ''}</small></div>
+                    <textarea aria-label="所选文件 OCR 文本" value={selected.result.text} readOnly />
+                  </>
+                )
+              ) : <p>{running ? (isCard ? '完成的名片会在这里显示可编辑字段。' : '完成的文件会在这里显示识别文本。') : '没有可显示的识别结果。'}</p>}
             </div>
           </div>
           {!running && successes > 0 && (
             <div className="ocr-actions batch-ocr-actions">
-              <button type="button" disabled={!selected?.result} onClick={() => void copySelected()}>{copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}{copied ? '已复制' : '复制所选'}</button>
-              <button type="button" disabled={!selected?.result} onClick={() => selected?.result && downloadText(selected.result.text, safeTextFilename(selected.file.name), 'text/plain;charset=utf-8')}><Download size={14} aria-hidden="true" />保存所选 TXT</button>
-              <button type="button" disabled={!selected?.result} onClick={() => void reviewSelectedMrz()}><FileText size={14} aria-hidden="true" />提取 MRZ</button>
+              {!isCard && <button type="button" disabled={!selected?.result} onClick={() => void copySelected()}>{copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}{copied ? '已复制' : '复制所选'}</button>}
+              {!isCard && <button type="button" disabled={!selected?.result} onClick={() => selected?.result && downloadText(selected.result.text, safeTextFilename(selected.file.name), 'text/plain;charset=utf-8')}><Download size={14} aria-hidden="true" />保存所选 TXT</button>}
+              {!isCard && <button type="button" disabled={!selected?.result} onClick={() => void reviewSelectedMrz()}><FileText size={14} aria-hidden="true" />提取 MRZ</button>}
               <button type="button" disabled={!selected?.result?.regions?.length} onClick={() => selected && setConfidenceReviewId(selected.id)}><AlertTriangle size={14} aria-hidden="true" />置信度复核 {summarizeOcrConfidence(selected?.result?.regions ?? []).reviewCount}</button>
               {selected?.result?.regions?.length ? <OcrLayoutExportActions regions={selected.result.regions} filename={selected.file.name} sourceFile={selected.file} language={language} onMessage={onMessage} /> : null}
-              <button type="button" onClick={() => downloadText(combinedText, 'ocr-batch-results.txt', 'text/plain;charset=utf-8')}><Download size={14} aria-hidden="true" />导出合并 TXT</button>
+              {isCard && selected?.card && <button type="button" onClick={() => downloadText(buildVCard(selected.card as BusinessCardFields), businessCardFilename(selected.card?.name ?? ''), 'text/vcard;charset=utf-8')}><Download size={14} aria-hidden="true" />确认并导出所选 VCF</button>}
+              {isCard
+                ? <button type="button" onClick={() => downloadText(buildVCardBundle(items.flatMap((item) => item.phase === 'success' && item.card ? [item.card] : [])), 'business-cards-batch.vcf', 'text/vcard;charset=utf-8')}><Download size={14} aria-hidden="true" />确认并导出合并 VCF</button>
+                : <button type="button" onClick={() => downloadText(combinedText, 'ocr-batch-results.txt', 'text/plain;charset=utf-8')}><Download size={14} aria-hidden="true" />导出合并 TXT</button>}
             </div>
           )}
         </div>
@@ -377,6 +432,14 @@ function SingleOcrToolPanel({ mode, onMessage }: OcrToolPanelProps) {
     } catch {
       onMessage('无法写入剪贴板，请手动选择识别文本')
     }
+  }
+
+  const applyCardCorrections = (corrections: OcrWordCorrection[]) => {
+    if (!result?.regions) return
+    const corrected = applyOcrWordCorrections(result.text, result.regions, corrections)
+    setResult({ ...result, text: corrected.text, regions: corrected.regions })
+    setCard(parseBusinessCard(corrected.text))
+    onMessage(`已应用 ${corrected.reviewedCount} 项名片逐词复核，其中 ${corrected.changedCount} 项改字；字段与版面导出已重新同步`)
   }
 
   const reset = () => {
@@ -459,6 +522,7 @@ function SingleOcrToolPanel({ mode, onMessage }: OcrToolPanelProps) {
           sourceLabel={file.name}
           regions={result.regions}
           onClose={() => setReviewingConfidence(false)}
+          onApplyCorrections={applyCardCorrections}
         />
       ) : phase === 'success' && result && mode === 'ocr' && (
         <div className="ocr-result-state">
@@ -492,7 +556,7 @@ function SingleOcrToolPanel({ mode, onMessage }: OcrToolPanelProps) {
             <button type="button" onClick={() => downloadText(buildVCard(card), businessCardFilename(card.name), 'text/vcard;charset=utf-8')}><Download size={14} aria-hidden="true" />确认并导出 VCF</button>
             <button type="button" onClick={reset}><RotateCcw size={14} aria-hidden="true" />识别另一张</button>
           </div>
-          {result.regions?.length ? <small className="ocr-layout-export-note">版面 JSON/CSV 使用识别时的原始词框，不跟随名片字段修改。</small> : null}
+          {result.regions?.length ? <small className="ocr-layout-export-note">版面 JSON/CSV/hOCR/ALTO 使用当前逐词复核结果与原坐标；名片字段单独修改不会重排词框。</small> : null}
         </div>
       )}
     </section>
@@ -500,7 +564,15 @@ function SingleOcrToolPanel({ mode, onMessage }: OcrToolPanelProps) {
 }
 
 export function OcrToolPanel(props: OcrToolPanelProps) {
-  return props.mode === 'ocr'
-    ? <BatchOcrPanel onMessage={props.onMessage} />
-    : <SingleOcrToolPanel {...props} />
+  const [batchCards, setBatchCards] = useState(false)
+  if (props.mode === 'ocr') return <BatchOcrPanel {...props} />
+  return (
+    <div className="card-ocr-mode-shell">
+      <div className="card-ocr-mode-switch" role="group" aria-label="名片 OCR 处理方式">
+        <button type="button" aria-pressed={!batchCards} onClick={() => setBatchCards(false)}>单张名片</button>
+        <button type="button" aria-pressed={batchCards} onClick={() => setBatchCards(true)}>批量名片</button>
+      </div>
+      {batchCards ? <BatchOcrPanel {...props} /> : <SingleOcrToolPanel {...props} />}
+    </div>
+  )
 }

@@ -17,6 +17,8 @@ describe('imageAdjustment', () => {
     expect(() => validateImageAdjustmentFile(new File(['x'], 'note.txt', { type: 'text/plain' }))).toThrow('请选择 PNG')
     expect(() => assertImageAdjustments({ ...neutralImageAdjustments, exposure: 2.1 })).toThrow('曝光')
     expect(() => assertImageAdjustments({ ...neutralImageAdjustments, grayscale: -1 })).toThrow('黑白')
+    expect(() => assertImageAdjustments({ ...neutralImageAdjustments, hue: 181 })).toThrow('色相')
+    expect(() => assertImageAdjustments({ ...neutralImageAdjustments, sharpness: 101 })).toThrow('锐化')
   })
 
   it('computes bounded preview and output dimensions', () => {
@@ -45,6 +47,20 @@ describe('imageAdjustment', () => {
   it('mixes to weighted grayscale at 100%', () => {
     const result = adjustImagePixels(new Uint8ClampedArray([255, 0, 0, 77]), { ...neutralImageAdjustments, grayscale: 100 })
     expect([...result]).toEqual([54, 54, 54, 77])
+  })
+
+  it('rotates hue while preserving alpha', () => {
+    const result = adjustImagePixels(new Uint8ClampedArray([255, 0, 0, 77]), { ...neutralImageAdjustments, hue: 120 })
+    expect(result[1]).toBeGreaterThan(result[0])
+    expect(result[1]).toBeGreaterThan(result[2])
+    expect(result[3]).toBe(77)
+  })
+
+  it('sharpens a local edge without changing alpha', () => {
+    const source = new Uint8ClampedArray(Array.from({ length: 9 }, (_, index) => [index === 4 ? 100 : 50, index === 4 ? 100 : 50, index === 4 ? 100 : 50, 200]).flat())
+    const result = adjustImagePixels(source, { ...neutralImageAdjustments, sharpness: 100 }, 3, 3)
+    expect(result[4 * 4]).toBeGreaterThan(100)
+    expect(result[4 * 4 + 3]).toBe(200)
   })
 
   it('provides distinct validated presets and neutral detection', () => {

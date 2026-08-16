@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildVCard, businessCardFilename, parseBusinessCard } from './businessCard'
+import { buildVCard, buildVCardBundle, businessCardFilename, parseBusinessCard } from './businessCard'
 
 describe('business-card parsing', () => {
   it('extracts common Chinese and English contact fields', () => {
@@ -45,5 +45,18 @@ https://example.com
 
   it('sanitizes contact filenames', () => {
     expect(businessCardFilename('Alex:Chen/Lead')).toBe('Alex-Chen-Lead.vcf')
+  })
+
+  it('builds a bounded multi-contact VCF bundle', () => {
+    const first = parseBusinessCard('Alex Chen\nEngineer\nNorthwind Inc.\nalex@example.com')
+    const second = parseBusinessCard('王小明\n星河科技有限公司\n13800138000')
+    const bundle = buildVCardBundle([first, second])
+
+    expect(bundle.match(/BEGIN:VCARD/g)).toHaveLength(2)
+    expect(bundle.match(/END:VCARD\r\n/g)).toHaveLength(2)
+    expect(bundle).toContain('FN:Alex Chen')
+    expect(bundle).toContain('FN:王小明')
+    expect(() => buildVCardBundle([])).toThrow('没有可导出')
+    expect(() => buildVCardBundle(Array.from({ length: 21 }, () => first))).toThrow('最多导出 20')
   })
 })

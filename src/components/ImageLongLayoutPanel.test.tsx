@@ -4,11 +4,11 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ImageLongLayoutPanel } from './ImageLongLayoutPanel'
 
-const longImageMocks = vi.hoisted(() => ({ join: vi.fn(), split: vi.fn() }))
+const longImageMocks = vi.hoisted(() => ({ join: vi.fn(), split: vi.fn(), overlaps: vi.fn() }))
 
 vi.mock('../lib/imageLongLayout', async (importOriginal) => {
   const original = await importOriginal<typeof import('../lib/imageLongLayout')>()
-  return { ...original, renderLongImageJoin: longImageMocks.join, renderLongImageSplit: longImageMocks.split }
+  return { ...original, renderLongImageJoin: longImageMocks.join, renderLongImageSplit: longImageMocks.split, analyzeLongImageOverlaps: longImageMocks.overlaps }
 })
 
 afterEach(() => {
@@ -92,5 +92,37 @@ describe('ImageLongLayoutPanel', () => {
     expect(click).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByRole('button', { name: '导出全部' }))
     expect(click).toHaveBeenCalledTimes(5)
+  })
+
+  it('applies only high-confidence overlap suggestions and clears them after direction changes', async () => {
+    longImageMocks.overlaps.mockResolvedValue({
+      acceptedCount: 1,
+      suggestions: [
+        { index: 1, overlapPercent: 20, score: 0.98, confidence: 0.91, texture: 32, crossShift: 0, status: 'accepted' },
+        { index: 2, overlapPercent: 14, score: 0.94, confidence: 0.41, texture: 28, crossShift: 1, status: 'ambiguous' },
+      ],
+    })
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:overlap')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+    const onMessage = vi.fn()
+    render(<ImageLongLayoutPanel onMessage={onMessage} />)
+    const files = [
+      new File(['one'], 'one.png', { type: 'image/png' }),
+      new File(['two'], 'two.png', { type: 'image/png' }),
+      new File(['three'], 'three.png', { type: 'image/png' }),
+    ]
+    fireEvent.change(screen.getByLabelText('选择长图拼接图片'), { target: { files } })
+    fireEvent.click(screen.getByRole('button', { name: '自动检测重叠' }))
+
+    await waitFor(() => expect(screen.getByText('自动检测：1 个已应用')).toBeTruthy())
+    expect(longImageMocks.overlaps).toHaveBeenCalledWith(files, 'vertical', expect.objectContaining({ signal: expect.any(AbortSignal), onProgress: expect.any(Function) }))
+    expect((screen.getByRole('combobox', { name: '裁去 two.png 开头' }) as HTMLSelectElement).value).toBe('20')
+    expect((screen.getByRole('combobox', { name: '裁去 three.png 开头' }) as HTMLSelectElement).value).toBe('0')
+    expect(screen.getByText('接缝歧义 · 手动')).toBeTruthy()
+    expect(onMessage).toHaveBeenCalledWith('已应用 1 个高置信度接缝；1 个低置信度接缝保持原设置')
+
+    fireEvent.change(screen.getByRole('combobox', { name: '长图拼接方向' }), { target: { value: 'horizontal' } })
+    expect(screen.queryByText('自动检测：1 个已应用')).toBeNull()
+    expect((screen.getByRole('combobox', { name: '裁去 two.png 开头' }) as HTMLSelectElement).value).toBe('0')
   })
 })

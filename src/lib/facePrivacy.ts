@@ -1,4 +1,5 @@
-import { FaceDetector, FilesetResolver } from '@mediapipe/tasks-vision'
+import type { FaceDetector } from '@mediapipe/tasks-vision'
+import { loadVisionRuntime } from './visionRuntime'
 
 export type FacePrivacyEffect = 'blur' | 'pixelate' | 'blackout'
 
@@ -31,6 +32,7 @@ function loadImage(dataUrl: string) {
 async function getDetector() {
   if (detectorPromise) return detectorPromise
   detectorPromise = (async () => {
+    const { FaceDetector, FilesetResolver } = await loadVisionRuntime()
     const vision = await FilesetResolver.forVisionTasks(localAsset('./wasm/'))
     const detector = await FaceDetector.createFromModelPath(
       vision,

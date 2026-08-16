@@ -103,6 +103,12 @@ export function buildVCard(fields: BusinessCardFields) {
   return `${lines.join('\r\n')}\r\n`
 }
 
+export function buildVCardBundle(cards: BusinessCardFields[]) {
+  if (cards.length === 0) throw new Error('没有可导出的名片联系人')
+  if (cards.length > 20) throw new Error('单次最多导出 20 个名片联系人')
+  return cards.map(buildVCard).join('')
+}
+
 export function businessCardFilename(name: string) {
   const safeName = [...name.trim()]
     .map((character) => character.charCodeAt(0) < 32 || /[<>:"/\\|?*]/.test(character) ? '-' : character)

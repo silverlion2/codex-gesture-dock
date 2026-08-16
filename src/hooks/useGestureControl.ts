@@ -1,7 +1,4 @@
-import {
-  FilesetResolver,
-  GestureRecognizer,
-} from '@mediapipe/tasks-vision'
+import type { GestureRecognizer } from '@mediapipe/tasks-vision'
 import {
   useCallback,
   useEffect,
@@ -18,6 +15,7 @@ import {
   type GestureBinding,
   type GestureName,
 } from '../lib/gestures'
+import { loadVisionRuntime } from '../lib/visionRuntime'
 
 export type GestureModelPhase = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -79,6 +77,7 @@ export function useGestureControl({
     ).toString()
 
     loadingRef.current = (async () => {
+      const { FilesetResolver, GestureRecognizer } = await loadVisionRuntime()
       const vision = await FilesetResolver.forVisionTasks(wasmRoot)
       const recognizer = await GestureRecognizer.createFromOptions(vision, {
         baseOptions: { modelAssetPath: modelPath },

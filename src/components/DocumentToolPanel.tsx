@@ -6,12 +6,14 @@ import {
   Copy,
   Download,
   FilePlus2,
+  FileCode2,
   FileScan,
   FileText,
   ImageDown,
   Crop,
   EyeOff,
   ReceiptText,
+  Search,
   RotateCcw,
   RotateCw,
   ShieldAlert,
@@ -19,7 +21,7 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react'
-import { lazy, Suspense, useEffect, useId, useRef, useState, type RefObject } from 'react'
+import { lazy, Suspense, useEffect, useId, useMemo, useRef, useState, type RefObject } from 'react'
 import {
   captureFromImageFile,
   captureFromPdfFile,
@@ -41,8 +43,9 @@ import {
   type LocalOcrRecognizer,
   type OcrProgress,
   type OcrRegion,
+  type OcrLanguage,
 } from '../lib/localOcr'
-import { buildDocumentOcrText, documentOcrFilename } from '../lib/documentOcr'
+import { buildDocumentOcrText, documentLayoutFilename, documentOcrFilename, findDocumentOcrMatches } from '../lib/documentOcr'
 import { findPiiSuggestions, type PiiSuggestion } from '../lib/piiSuggestions'
 import type { MrzExtraction } from '../lib/mrzExtraction'
 import { extractReceiptFields, type ReceiptFields } from '../lib/receiptFields'
@@ -52,6 +55,19 @@ import { ReceiptFieldsPanel } from './ReceiptFieldsPanel'
 import { OcrConfidenceReview } from './OcrConfidenceReview'
 import { OcrLayoutExportActions } from './OcrLayoutExportActions'
 import { summarizeOcrConfidence } from '../lib/ocrConfidence'
+import { applyOcrWordCorrections, type OcrWordCorrection } from '../lib/ocrCorrections'
+import {
+  createOcrLayoutDocument,
+  serializeOcrLayoutAltoPages,
+  serializeOcrLayoutCsvPages,
+  serializeOcrLayoutHocrPages,
+  serializeOcrLayoutJsonPages,
+} from '../lib/ocrLayoutExport'
+import {
+  downloadSearchableScannedPdf,
+  searchablePdfEligiblePageCount,
+  type SearchableDocumentPdfPage,
+} from '../lib/searchableDocumentPdf'
 
 const MrzFieldsPanel = lazy(() => import('./MrzFieldsPanel'))
 
@@ -65,11 +81,19 @@ interface DocumentToolPanelProps {
 type WorkPhase = 'importing-pdf' | 'scanning' | 'redacting' | 'rotating' | 'ocr' | 'exporting' | null
 
 interface PageOcrReview {
+  language: OcrLanguage
   text: string
   originalText: string
   piiSuggestions: PiiSuggestion[]
   regions: OcrRegion[]
+  originalRegions: OcrRegion[]
 }
+
+const scannerOcrLanguageOptions: Array<{ value: OcrLanguage; label: string }> = [
+  { value: 'eng+chi_sim', label: '简中 + English' },
+  { value: 'eng+chi_tra', label: '繁中 + English' },
+  { value: 'eng', label: 'English' },
+]
 
 const filterLabels: Record<DocumentFilter, string> = {
   document: '黑白文档',
@@ -88,8 +112,8 @@ function pageAsFile(page: ScannedDocumentPage) {
   return new File([bytes], page.filename, { type: mimeType })
 }
 
-function downloadText(text: string, filename: string) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }))
+function downloadText(text: string, filename: string, type = 'text/plain;charset=utf-8') {
+  const url = URL.createObjectURL(new Blob([text], { type }))
   const link = document.createElement('a')
   link.href = url
   link.download = filename
@@ -118,12 +142,46 @@ export function DocumentToolPanel({
   const [receiptFields, setReceiptFields] = useState<ReceiptFields | null>(null)
   const [mrzExtraction, setMrzExtraction] = useState<MrzExtraction | null>(null)
   const [reviewingConfidence, setReviewingConfidence] = useState(false)
+  const [documentSearchQuery, setDocumentSearchQuery] = useState('')
+  const [ocrLanguage, setOcrLanguage] = useState<OcrLanguage>('eng+chi_sim')
   const abortRef = useRef<AbortController | null>(null)
   const activePage = pages[activeIndex] ?? null
   const activeOcrReview = activePage ? pageOcrReviews[activePage.id] : undefined
   const ocrText = activeOcrReview?.text ?? ''
   const piiSuggestions = activeOcrReview?.piiSuggestions ?? []
   const recognizedPageCount = pages.filter((page) => Boolean(pageOcrReviews[page.id])).length
+  const searchablePdfPages = useMemo<SearchableDocumentPdfPage[]>(() => pages.map((page) => ({
+    page,
+    regions: pageOcrReviews[page.id]?.regions ?? [],
+  })), [pageOcrReviews, pages])
+  const searchablePageCount = searchablePdfEligiblePageCount(searchablePdfPages)
+  const layoutDocuments = useMemo(() => pages.flatMap((page) => {
+    const review = pageOcrReviews[page.id]
+    if (!review) return []
+    const layout = createOcrLayoutDocument(review.regions, {
+      filename: page.filename,
+      width: page.width,
+      height: page.height,
+      language: review.language,
+    })
+    return layout.wordCount > 0 ? [layout] : []
+  }), [pageOcrReviews, pages])
+  const layoutPageCount = layoutDocuments.length
+  const piiReviewPages = useMemo(() => pages.flatMap((page, index) => {
+    const suggestionCount = pageOcrReviews[page.id]?.piiSuggestions.length ?? 0
+    return suggestionCount > 0 ? [{ index, suggestionCount }] : []
+  }), [pageOcrReviews, pages])
+  const documentPiiSuggestionCount = piiReviewPages.reduce((total, page) => total + page.suggestionCount, 0)
+  const qualityReviewPages = useMemo(() => pages.flatMap((page, index) =>
+    page.quality && page.quality.status !== 'good'
+      ? [{ index, issueCount: page.quality.issues.length }]
+      : [],
+  ), [pages])
+  const documentSearchMatches = useMemo(
+    () => findDocumentOcrMatches(pages, pageOcrReviews, documentSearchQuery),
+    [documentSearchQuery, pageOcrReviews, pages],
+  )
+  const nextDocumentSearchMatch = documentSearchMatches.find((match) => match.pageIndex > activeIndex) ?? documentSearchMatches[0]
 
   useEffect(() => () => abortRef.current?.abort(), [])
 
@@ -265,6 +323,24 @@ export function DocumentToolPanel({
     }
   }
 
+  const exportSearchablePdf = async () => {
+    if (searchablePageCount !== pages.length || pages.length === 0) return
+    setPhase('exporting')
+    setError('')
+    setProgressMessage('正在载入离线中文字体')
+    try {
+      await downloadSearchableScannedPdf(searchablePdfPages, {
+        onProgress: (page, pageCount) => setProgressMessage(`正在写入可搜索 PDF 第 ${page} / ${pageCount} 页`),
+      })
+      onMessage(`已生成 ${pages.length} 页本机可搜索 PDF；文字层来自当前逐词复核结果与原坐标`)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '可搜索 PDF 导出失败')
+    } finally {
+      setPhase(null)
+      setProgressMessage('')
+    }
+  }
+
   const exportDocumentOcr = () => {
     if (pages.length === 0 || recognizedPageCount === 0) return
     downloadText(
@@ -275,6 +351,72 @@ export function DocumentToolPanel({
     onMessage(missingCount === 0
       ? `已按当前页序导出 ${pages.length} 页 OCR 文本`
       : `已导出 ${recognizedPageCount} 页 OCR 文本；另有 ${missingCount} 页以“尚未执行 OCR”标记`)
+  }
+
+  const exportDocumentLayout = (format: 'json' | 'csv' | 'hocr' | 'alto') => {
+    if (pages.length === 0 || layoutPageCount !== pages.length) return
+    try {
+      const filename = documentLayoutFilename(pages[0].filename, format)
+      const sourceName = `${pages.length}-page scanned document (${pages[0].filename})`
+      const content = format === 'json'
+        ? serializeOcrLayoutJsonPages(layoutDocuments, sourceName)
+        : format === 'csv'
+          ? serializeOcrLayoutCsvPages(layoutDocuments)
+          : format === 'hocr'
+            ? serializeOcrLayoutHocrPages(layoutDocuments)
+            : serializeOcrLayoutAltoPages(layoutDocuments, sourceName)
+      downloadText(
+        content,
+        filename,
+        format === 'json'
+          ? 'application/json;charset=utf-8'
+          : format === 'csv'
+            ? 'text/csv;charset=utf-8'
+            : format === 'hocr'
+              ? 'text/html;charset=utf-8'
+              : 'application/xml;charset=utf-8',
+      )
+      const formatLabel = format === 'hocr' ? 'hOCR' : format === 'alto' ? 'ALTO 4.4' : format.toUpperCase()
+      onMessage(`已按当前页序导出 ${pages.length} 页 ${formatLabel} 版面`)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '多页 OCR 版面导出失败')
+    }
+  }
+
+  const openNextDocumentPiiReview = () => {
+    const target = piiReviewPages.find((page) => page.index > activeIndex) ?? piiReviewPages[0]
+    if (!target) return
+    setActiveIndex(target.index)
+    setEditingCorners(false)
+    setReceiptFields(null)
+    setMrzExtraction(null)
+    setReviewingConfidence(false)
+    setEditingRedactions(true)
+    onMessage(`已定位第 ${target.index + 1} 页的 ${target.suggestionCount} 处疑似敏感信息；请逐项调整、删除或确认`)
+  }
+
+  const openNextQualityReview = () => {
+    const target = qualityReviewPages.find((page) => page.index > activeIndex) ?? qualityReviewPages[0]
+    if (!target) return
+    setActiveIndex(target.index)
+    setEditingCorners(false)
+    setEditingRedactions(false)
+    setReceiptFields(null)
+    setMrzExtraction(null)
+    setReviewingConfidence(false)
+    onMessage(`已定位第 ${target.index + 1} 页；发现 ${target.issueCount} 项拍摄质量建议`)
+  }
+
+  const openNextDocumentSearchMatch = () => {
+    const target = nextDocumentSearchMatch
+    if (!target) return
+    setActiveIndex(target.pageIndex)
+    setEditingCorners(false)
+    setEditingRedactions(false)
+    setReceiptFields(null)
+    setMrzExtraction(null)
+    setReviewingConfidence(false)
+    onMessage(`已定位第 ${target.pageIndex + 1} 页；此页有 ${target.occurrenceCount} 处文字匹配`)
   }
 
   const applyRedactions = async (redactions: DocumentRedaction[]) => {
@@ -319,9 +461,10 @@ export function DocumentToolPanel({
     page: ScannedDocumentPage,
     onProgress: (progress: OcrProgress) => void,
     signal: AbortSignal,
+    language: OcrLanguage,
     recognize: LocalOcrRecognizer = (file, progress, activeSignal) => recognizeLocalFile(
       file,
-      'eng+chi_sim',
+      language,
       progress,
       activeSignal,
     ),
@@ -332,10 +475,12 @@ export function DocumentToolPanel({
       signal,
     )
     return {
+      language,
       text: result.text,
       originalText: result.text,
       piiSuggestions: findPiiSuggestions(result.regions ?? [], page.width, page.height),
       regions: result.regions ?? [],
+      originalRegions: result.regions ?? [],
     }
   }
 
@@ -345,6 +490,41 @@ export function DocumentToolPanel({
     setPageOcrReviews((current) => current[pageId]
       ? { ...current, [pageId]: { ...current[pageId], text } }
       : current)
+  }
+
+  const applyActiveOcrCorrections = (corrections: OcrWordCorrection[]) => {
+    if (!activePage || !activeOcrReview) return
+    const corrected = applyOcrWordCorrections(activeOcrReview.text, activeOcrReview.regions, corrections)
+    const pageId = activePage.id
+    setPageOcrReviews((current) => current[pageId]
+      ? {
+          ...current,
+          [pageId]: {
+            ...current[pageId],
+            text: corrected.text,
+            regions: corrected.regions,
+            piiSuggestions: findPiiSuggestions(corrected.regions, activePage.width, activePage.height),
+          },
+        }
+      : current)
+    onMessage(`已应用 ${corrected.reviewedCount} 项逐词复核，其中 ${corrected.changedCount} 项改字；版面与可搜索 PDF 将使用校正词`)
+  }
+
+  const restoreActiveOcr = () => {
+    if (!activePage || !activeOcrReview) return
+    const pageId = activePage.id
+    setPageOcrReviews((current) => current[pageId]
+      ? {
+          ...current,
+          [pageId]: {
+            ...current[pageId],
+            text: current[pageId].originalText,
+            regions: current[pageId].originalRegions,
+            piiSuggestions: findPiiSuggestions(current[pageId].originalRegions, activePage.width, activePage.height),
+          },
+        }
+      : current)
+    onMessage('已恢复当前页的本机 OCR 原始文本与词框')
   }
 
   const recognizePage = async () => {
@@ -361,6 +541,7 @@ export function DocumentToolPanel({
         activePage,
         (progress: OcrProgress) => setProgressMessage(`${progress.message} ${Math.round(progress.progress * 100)}%`),
         controller.signal,
+        ocrLanguage,
       )
       if (!controller.signal.aborted) {
         setPageOcrReviews((current) => ({
@@ -395,14 +576,14 @@ export function DocumentToolPanel({
     const failedPages: string[] = []
     let completed = 0
     try {
-      await withLocalOcrSession('eng+chi_sim', async (recognize) => {
+      await withLocalOcrSession(ocrLanguage, async (recognize) => {
         for (let index = 0; index < pendingPages.length; index += 1) {
           if (controller.signal.aborted) break
           const page = pendingPages[index]
           try {
             const review = await runPageOcr(page, (progress) => {
               setProgressMessage(`OCR 未识别页 ${index + 1}/${pendingPages.length} · ${progress.message} ${Math.round(progress.progress * 100)}%`)
-            }, controller.signal, recognize)
+            }, controller.signal, ocrLanguage, recognize)
             if (controller.signal.aborted) break
             setPageOcrReviews((current) => ({ ...current, [page.id]: review }))
             completed += 1
@@ -491,7 +672,7 @@ export function DocumentToolPanel({
       {phase && (
         <div className="document-processing" role="status" aria-live="polite">
           <span className="small-spinner" aria-hidden="true" />
-          <div><strong>{phase === 'exporting' ? '正在生成 PDF' : phase === 'redacting' ? '正在永久应用隐私遮盖' : phase === 'rotating' ? '正在旋转当前页并同步遮盖位置' : progressMessage || '正在处理'}</strong><small>{phase === 'importing-pdf' ? 'PDF 将转为图像页；原文本层与批注不会保留' : '请保持此窗口打开'}</small></div>
+          <div><strong>{phase === 'exporting' ? progressMessage || '正在生成 PDF' : phase === 'redacting' ? '正在永久应用隐私遮盖' : phase === 'rotating' ? '正在旋转当前页并同步遮盖位置' : progressMessage || '正在处理'}</strong><small>{phase === 'importing-pdf' ? 'PDF 将转为图像页；原文本层与批注不会保留' : phase === 'exporting' ? '图片、OCR 文字层与字体均只在本机处理' : '请保持此窗口打开'}</small></div>
           {phase === 'ocr' && <button type="button" onClick={cancelOcr}>取消 OCR</button>}
         </div>
       )}
@@ -568,6 +749,7 @@ export function DocumentToolPanel({
           width={activePage.width}
           height={activePage.height}
           onClose={() => setReviewingConfidence(false)}
+          onApplyCorrections={applyActiveOcrCorrections}
         />
       ) : null}
 
@@ -602,6 +784,25 @@ export function DocumentToolPanel({
               <select aria-label="扫描效果" value={filter} onChange={(event) => setFilter(event.target.value as DocumentFilter)}>{Object.entries(filterLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
               <button type="button" onClick={applyFilter}>应用到本页</button>
             </div>
+            <div className="document-filter-row">
+              <label>
+                <span>扫描页 OCR 语言</span>
+                <select value={ocrLanguage} onChange={(event) => setOcrLanguage(event.target.value as OcrLanguage)}>
+                  {scannerOcrLanguageOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+              <small>只影响后续 OCR；已完成页保留识别时语言</small>
+            </div>
+            {recognizedPageCount > 0 && (
+              <div className="document-filter-row">
+                <label>
+                  <span>搜索全部扫描页 OCR</span>
+                  <input type="search" maxLength={200} value={documentSearchQuery} onChange={(event) => setDocumentSearchQuery(event.target.value)} />
+                </label>
+                <button type="button" disabled={documentSearchMatches.length === 0} onClick={openNextDocumentSearchMatch}><Search size={14} aria-hidden="true" />下一匹配页 {documentSearchMatches.length}</button>
+                {documentSearchQuery.trim() && <small aria-live="polite">{nextDocumentSearchMatch ? `下一页：${nextDocumentSearchMatch.pageIndex + 1} · ${nextDocumentSearchMatch.filename} · ${nextDocumentSearchMatch.preview}` : '未在已完成 OCR 页中找到匹配'}</small>}
+              </div>
+            )}
             <div className="document-actions">
               <button type="button" disabled={!sessionReady} onClick={capturePage}><FilePlus2 size={14} aria-hidden="true" />拍下一页</button>
               {fileButton(addPageId, '导入文件')}
@@ -609,6 +810,11 @@ export function DocumentToolPanel({
               <button type="button" disabled={activeIndex === pages.length - 1} onClick={() => moveActivePage(1)}><ArrowRight size={14} aria-hidden="true" />后移一页</button>
               <button type="button" onClick={() => downloadScannedPage(activePage)}><ImageDown size={14} aria-hidden="true" />PNG</button>
               <button type="button" onClick={() => void exportPdf()}><Download size={14} aria-hidden="true" />{pages.length} 页 PDF</button>
+              <button type="button" title={searchablePageCount === pages.length ? '导出带不可见 OCR 文字层的本机 PDF' : '请先完成每一页 OCR；每页必须包含版面词框'} disabled={searchablePageCount !== pages.length} onClick={() => void exportSearchablePdf()}><FileText size={14} aria-hidden="true" />可搜索 PDF {searchablePageCount}/{pages.length}</button>
+              <button type="button" title={layoutPageCount === pages.length ? '按当前页序导出多页 JSON 版面' : '请先完成每一页 OCR；每页必须包含版面词框'} disabled={layoutPageCount !== pages.length} onClick={() => exportDocumentLayout('json')}><FileCode2 size={14} aria-hidden="true" />多页 JSON {layoutPageCount}/{pages.length}</button>
+              <button type="button" title={layoutPageCount === pages.length ? '按当前页序导出多页 CSV 版面' : '请先完成每一页 OCR；每页必须包含版面词框'} disabled={layoutPageCount !== pages.length} onClick={() => exportDocumentLayout('csv')}><FileCode2 size={14} aria-hidden="true" />多页 CSV {layoutPageCount}/{pages.length}</button>
+              <button type="button" title={layoutPageCount === pages.length ? '按当前页序导出多页 hOCR 版面' : '请先完成每一页 OCR；每页必须包含版面词框'} disabled={layoutPageCount !== pages.length} onClick={() => exportDocumentLayout('hocr')}><FileCode2 size={14} aria-hidden="true" />多页 hOCR {layoutPageCount}/{pages.length}</button>
+              <button type="button" title={layoutPageCount === pages.length ? '按当前页序导出多页 ALTO 4.4 版面' : '请先完成每一页 OCR；每页必须包含版面词框'} disabled={layoutPageCount !== pages.length} onClick={() => exportDocumentLayout('alto')}><FileCode2 size={14} aria-hidden="true" />多页 ALTO {layoutPageCount}/{pages.length}</button>
               <button type="button" disabled={recognizedPageCount === 0} onClick={exportDocumentOcr}><FileText size={14} aria-hidden="true" />OCR TXT {recognizedPageCount}/{pages.length}</button>
               <button type="button" disabled={recognizedPageCount === pages.length} onClick={() => void recognizeMissingPages()}><FileText size={14} aria-hidden="true" />OCR 未识别页 {pages.length - recognizedPageCount}</button>
               <button type="button" onClick={() => void recognizePage()}><FileText size={14} aria-hidden="true" />OCR 本页</button>
@@ -616,21 +822,23 @@ export function DocumentToolPanel({
               <button type="button" onClick={() => void rotatePage('right')}><RotateCw size={14} aria-hidden="true" />向右旋转</button>
               <button type="button" onClick={() => { setEditingCorners(true); setEditingRedactions(false) }}><Crop size={14} aria-hidden="true" />调整边缘</button>
               <button type="button" onClick={() => { setEditingRedactions(true); setEditingCorners(false) }}><EyeOff size={14} aria-hidden="true" />隐私遮盖</button>
+              {qualityReviewPages.length > 0 && <button type="button" onClick={openNextQualityReview}><AlertTriangle size={14} aria-hidden="true" />下一质量问题页 {qualityReviewPages.length}</button>}
+              {documentPiiSuggestionCount > 0 && <button type="button" onClick={openNextDocumentPiiReview}><ShieldAlert size={14} aria-hidden="true" />下一敏感页 {documentPiiSuggestionCount} 处 / {piiReviewPages.length} 页</button>}
               <button type="button" aria-label="删除当前扫描页" onClick={removePage}><Trash2 size={14} aria-hidden="true" /></button>
             </div>
             {activeOcrReview && (
               <div className="document-ocr-result">
                 <div>
                   <textarea aria-label="当前扫描页 OCR 文本" value={ocrText} onChange={(event) => updateActiveOcrText(event.target.value)} />
-                  <small>{activeOcrReview?.text === activeOcrReview?.originalText ? '本机 OCR 原始文本 · 可人工修正' : '已人工修正 · 复制、提取与 TXT 将使用当前文本'}{activeOcrReview.regions.length > 0 ? ' · 版面 JSON/CSV 使用识别原始词框' : ''}</small>
+                  <small>{activeOcrReview?.text === activeOcrReview?.originalText ? '本机 OCR 原始文本 · 可人工修正' : '已人工修正 · 复制、提取与 TXT 将使用当前文本'}{activeOcrReview.regions.length > 0 ? ' · 逐词复核会同步版面与可搜索 PDF；整段自由编辑不会重排词框' : ''}</small>
                 </div>
                 <div>
                   <button type="button" onClick={() => void copyOcr()}>{copied ? <Check size={13} aria-hidden="true" /> : <Copy size={13} aria-hidden="true" />}{copied ? '已复制' : '复制'}</button>
-                  {activeOcrReview?.text !== activeOcrReview?.originalText && <button type="button" onClick={() => { updateActiveOcrText(activeOcrReview.originalText); onMessage('已恢复当前页的本机 OCR 原始文本') }}><RotateCcw size={13} aria-hidden="true" />恢复识别文本</button>}
+                  {activeOcrReview?.text !== activeOcrReview?.originalText && <button type="button" onClick={restoreActiveOcr}><RotateCcw size={13} aria-hidden="true" />恢复识别文本与词框</button>}
                   <button type="button" onClick={() => { setReceiptFields(extractReceiptFields(ocrText)); onMessage('已在本机预填票据字段，请确认后导出') }}><ReceiptText size={13} aria-hidden="true" />提取票据</button>
                   <button type="button" onClick={() => void reviewMrz()}><FileText size={13} aria-hidden="true" />提取 MRZ</button>
                   {activeOcrReview.regions.length > 0 && <button type="button" onClick={() => setReviewingConfidence(true)}><AlertTriangle size={13} aria-hidden="true" />置信度复核 {summarizeOcrConfidence(activeOcrReview.regions).reviewCount}</button>}
-                  {activeOcrReview.regions.length > 0 && <OcrLayoutExportActions regions={activeOcrReview.regions} filename={activePage.filename} width={activePage.width} height={activePage.height} language="eng+chi_sim" onMessage={onMessage} />}
+                  {activeOcrReview.regions.length > 0 && <OcrLayoutExportActions regions={activeOcrReview.regions} filename={activePage.filename} width={activePage.width} height={activePage.height} language={activeOcrReview.language} onMessage={onMessage} />}
                   {piiSuggestions.length > 0 && <button type="button" onClick={() => { setEditingRedactions(true); setEditingCorners(false); onMessage('已载入疑似敏感信息位置；请调整、删除或确认后再应用') }}><ShieldAlert size={13} aria-hidden="true" />复核 {piiSuggestions.length} 处敏感信息</button>}
                 </div>
               </div>

@@ -17,6 +17,10 @@ import { ImageLongLayoutPanel } from './ImageLongLayoutPanel'
 import { ImageAdjustmentPanel } from './ImageAdjustmentPanel'
 import { ImageWatermarkPanel } from './ImageWatermarkPanel'
 import { ImageBatchProcessorPanel } from './ImageBatchProcessorPanel'
+import { ScreenshotBeautifierPanel } from './ScreenshotBeautifierPanel'
+import { ImageInkExtractionPanel } from './ImageInkExtractionPanel'
+import { ImageColorKeyPanel } from './ImageColorKeyPanel'
+import { ImageStickerOutlinePanel } from './ImageStickerOutlinePanel'
 
 interface ImageComparisonPanelProps {
   onMessage: (message: string) => void
@@ -24,7 +28,7 @@ interface ImageComparisonPanelProps {
 
 type ComparisonPhase = 'idle' | 'preparing' | 'ready' | 'error'
 type ComparisonView = 'wipe' | 'diff'
-type ImageAnalysisWorkspace = 'compare' | 'duplicates' | 'optimize' | 'crop' | 'inspect' | 'annotate' | 'contact-sheet' | 'long-image' | 'adjust' | 'watermark' | 'batch'
+type ImageAnalysisWorkspace = 'compare' | 'duplicates' | 'optimize' | 'crop' | 'inspect' | 'annotate' | 'contact-sheet' | 'long-image' | 'adjust' | 'watermark' | 'batch' | 'beautify' | 'ink' | 'color-key' | 'sticker'
 
 const toleranceOptions = [
   { value: 0.05, label: '严格 · 5%' },
@@ -120,7 +124,7 @@ export function ImageComparisonPanel({ onMessage }: ImageComparisonPanelProps) {
     <section className="camera-tool-panel image-comparison-panel" aria-label="本机图片分析">
       <header>
         <div><GitCompare size={17} aria-hidden="true" /><strong>图片分析</strong></div>
-        <span><ShieldCheck size={13} aria-hidden="true" />对比、编排、检查与标注像素均留在本机</span>
+        <span><ShieldCheck size={13} aria-hidden="true" />对比、编排、检查、标注与抠图像素均留在本机</span>
       </header>
 
       <div className="image-analysis-workspace-tabs" role="group" aria-label="图片分析工具">
@@ -135,6 +139,10 @@ export function ImageComparisonPanel({ onMessage }: ImageComparisonPanelProps) {
         <button type="button" aria-pressed={workspace === 'adjust'} onClick={() => setWorkspace('adjust')}>调整</button>
         <button type="button" aria-pressed={workspace === 'watermark'} onClick={() => setWorkspace('watermark')}>水印</button>
         <button type="button" aria-pressed={workspace === 'batch'} onClick={() => setWorkspace('batch')}>批处理</button>
+        <button type="button" aria-pressed={workspace === 'beautify'} onClick={() => setWorkspace('beautify')}>美化</button>
+        <button type="button" aria-pressed={workspace === 'ink'} onClick={() => setWorkspace('ink')}>线稿抠图</button>
+        <button type="button" aria-pressed={workspace === 'color-key'} onClick={() => setWorkspace('color-key')}>色彩抠图</button>
+        <button type="button" aria-pressed={workspace === 'sticker'} onClick={() => setWorkspace('sticker')}>贴纸描边</button>
       </div>
 
       <div className="image-analysis-subworkspace image-analysis-duplicate-workspace" hidden={workspace !== 'duplicates'}>
@@ -166,6 +174,18 @@ export function ImageComparisonPanel({ onMessage }: ImageComparisonPanelProps) {
       </div>
       <div className="image-analysis-subworkspace" hidden={workspace !== 'batch'}>
         <ImageBatchProcessorPanel onMessage={onMessage} />
+      </div>
+      <div className="image-analysis-subworkspace" hidden={workspace !== 'beautify'}>
+        <ScreenshotBeautifierPanel onMessage={onMessage} />
+      </div>
+      <div className="image-analysis-subworkspace" hidden={workspace !== 'ink'}>
+        <ImageInkExtractionPanel onMessage={onMessage} />
+      </div>
+      <div className="image-analysis-subworkspace" hidden={workspace !== 'color-key'}>
+        <ImageColorKeyPanel onMessage={onMessage} />
+      </div>
+      <div className="image-analysis-subworkspace" hidden={workspace !== 'sticker'}>
+        <ImageStickerOutlinePanel onMessage={onMessage} />
       </div>
 
       {workspace === 'compare' && phase === 'idle' && (

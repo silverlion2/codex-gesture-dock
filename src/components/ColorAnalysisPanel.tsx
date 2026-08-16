@@ -10,6 +10,7 @@ import {
   type PreparedColorAnalysis,
   type SampledColor,
 } from '../lib/colorAnalysis'
+import { ColorVisionSimulatorPanel } from './ColorVisionSimulatorPanel'
 
 interface ColorAnalysisPanelProps {
   onMessage: (message: string) => void
@@ -31,6 +32,7 @@ function contrastLabel(pass: boolean) {
 }
 
 export function ColorAnalysisPanel({ onMessage }: ColorAnalysisPanelProps) {
+  const [workspace, setWorkspace] = useState<'palette' | 'vision'>('palette')
   const [phase, setPhase] = useState<AnalysisPhase>('idle')
   const [analysis, setAnalysis] = useState<PreparedColorAnalysis | null>(null)
   const [activeRole, setActiveRole] = useState<ColorRole>('background')
@@ -127,11 +129,16 @@ export function ColorAnalysisPanel({ onMessage }: ColorAnalysisPanelProps) {
         <span><ShieldCheck size={13} aria-hidden="true" />图片、取样点与调色板仅留在本机</span>
       </header>
 
+      <div className="color-workspace-tabs" role="group" aria-label="颜色实验室工具">
+        <button type="button" aria-pressed={workspace === 'palette'} onClick={() => setWorkspace('palette')}>取色与对比</button>
+        <button type="button" aria-pressed={workspace === 'vision'} onClick={() => setWorkspace('vision')}>色觉预览</button>
+      </div>
+
       {phase === 'idle' && (
         <div className="color-analysis-empty">
           <Palette size={27} aria-hidden="true" />
-          <strong>从图片提取代表色并检查文字对比度</strong>
-          <small>导入照片、截图或设计稿；支持 PNG、JPEG、WebP 与 BMP，最大 35 MB</small>
+          <strong>{workspace === 'palette' ? '从图片提取代表色并检查文字对比度' : '预览常见色觉缺失下的图片辨识效果'}</strong>
+          <small>导入照片、截图或设计稿；支持 PNG、JPEG、WebP 与 BMP，最大 35 MB，仅在本机处理</small>
           <label className="ocr-upload-button"><Upload size={14} aria-hidden="true" />选择图片<input className="sr-only" aria-label="选择颜色分析图片" type="file" accept="image/png,image/jpeg,image/webp,image/bmp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void analyze(file); event.target.value = '' }} /></label>
         </div>
       )}
@@ -139,7 +146,7 @@ export function ColorAnalysisPanel({ onMessage }: ColorAnalysisPanelProps) {
       {phase === 'loading' && (
         <div className="image-comparison-loading" role="status" aria-live="polite">
           <span className="small-spinner" aria-hidden="true" />
-          <div><strong>正在提取感知调色板</strong><small>使用本机 OKLCH 量化，图片不会上传</small></div>
+          <div><strong>正在准备有界颜色画布</strong><small>使用本机 OKLCH 量化与像素处理，图片不会上传</small></div>
         </div>
       )}
 
@@ -147,7 +154,9 @@ export function ColorAnalysisPanel({ onMessage }: ColorAnalysisPanelProps) {
         <div className="ocr-error-state" role="alert"><strong>颜色分析失败</strong><span>{error}</span><button type="button" onClick={reset}><RefreshCw size={14} aria-hidden="true" />重新选择</button></div>
       )}
 
-      {phase === 'ready' && analysis && (
+      {phase === 'ready' && analysis && workspace === 'vision' && <ColorVisionSimulatorPanel analysis={analysis} onMessage={onMessage} onReset={reset} />}
+
+      {phase === 'ready' && analysis && workspace === 'palette' && (
         <div className="color-analysis-workbench">
           <div className="color-analysis-visual-column">
             <div className="color-analysis-role-switcher" role="group" aria-label="当前取样目标">

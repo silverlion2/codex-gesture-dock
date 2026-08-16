@@ -64,6 +64,8 @@ describe('ImageAdjustmentPanel', () => {
       contrast: 12,
       saturation: 24,
       temperature: 4,
+      hue: 0,
+      sharpness: 18,
       grayscale: 0,
     }, expect.any(AbortSignal))
     fireEvent.change(screen.getByRole('slider', { name: '图片调整前后分界' }), { target: { value: '72' } })

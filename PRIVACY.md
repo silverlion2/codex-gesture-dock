@@ -19,6 +19,12 @@ project.
   images use an in-memory object URL that is revoked after one decode attempt.
   The image and decoded value are not uploaded or retained by the application;
   the value leaves memory only when the user explicitly copies it.
+- QR codes for text, HTTP(S) URLs, Wi-Fi credentials, and vCard contacts are
+  generated locally with the bundled ZXing writer. Payloads and generated SVGs
+  remain in renderer memory; temporary preview URLs are revoked when replaced
+  or closed. PNG conversion uses an in-memory canvas. The application does not
+  navigate to encoded URLs, join networks, or write contacts. Data leaves the
+  tool only when the user explicitly copies the payload or exports SVG/PNG.
 - Document mode accepts an explicit camera capture, a user-selected image, or
   a PDF containing up to 20 pages and no more than 35 MB. Bundled PDF.js
   sequentially rasterizes selected PDFs in memory with a 2200-pixel maximum
@@ -50,22 +56,80 @@ project.
   Chinese, and Traditional Chinese language data. PDF text extraction and
   scanned-page rendering use the bundled PDF.js worker. Source files,
   recognized text, and parsed contact fields remain in renderer memory. They
-  are written only when the user explicitly exports TXT or VCF. Client-side
-  PDF generation for document scans uses bundled jsPDF and runs locally. File
-  OCR batches run sequentially on the device and reuse one fixed-language,
+  are written only when the user explicitly exports TXT or VCF. Business-card
+  batches accept at most 20 images, reuse one fixed-language OCR session
+  sequentially, and keep each contact's editable fields separate in memory.
+  Explicit export can write one contact or a combined VCF containing all
+  successful, user-reviewed contacts; it never writes to the system address
+  book. Client-side PDF generation for document scans uses bundled jsPDF and
+  runs locally.
+  A separate searchable-PDF action is enabled only after every scanned page
+  has valid OCR word boxes. It loads the bundled Noto Sans SC font locally and
+  writes the current per-word-reviewed text at the original coordinates as an
+  invisible text layer over the
+  current page rasters; jsPDF embeds only glyphs used by the document. The
+  layer does not use later free-form textarea edits because those edits have no
+  reliable geometry. Rotation, reprocessing, deletion, or permanent redaction
+  invalidates that page's OCR first, so stale or pre-redaction text cannot be
+  exported through this action. The output can contain sensitive searchable
+  text and should be protected like the source document.
+  When multiple scanned pages contain local PII suggestions, a document-level
+  navigation action shows only the aggregate suggestion/page counts and moves
+  to the next flagged page in the current order. It loads that page's boxes
+  into the existing manual redaction editor but never applies them
+  automatically; pixels change only after explicit review and confirmation.
+  File OCR batches run sequentially on the device and reuse one fixed-language,
   short-lived worker instead of loading a model for every file or missing scan
   page. The worker is terminated after completion, cancellation, or failure;
   queued files, per-file errors, and completed text remain in renderer memory until reset or tool closure.
   Combined TXT export occurs only after an explicit user action.
   Image OCR word confidence scores and bounding boxes may be shown as a local
   review overlay for file, business-card, and scanned-page results. The chosen
-  threshold and selection are temporary UI state; scores and geometry are not
-  persisted or used to rewrite recognized text automatically. Only an explicit
-  “layout JSON” or “layout CSV” action writes the source filename, dimensions,
-  recognized words, confidence scores, and pixel/normalized geometry to the
-  user-selected download location. Those exports can contain sensitive text and
+  threshold, low-score/all-word mode, page, and selection are temporary UI
+  state; all-word mode presents valid boxes in bounded groups of 100. Scores and geometry are not
+  persisted or used to rewrite recognized text automatically. Users may record
+  bounded per-word corrections and explicitly apply them. Corrections preserve
+  the original geometry and engine confidence, retain the first recognized text
+  as provenance, and may use an empty value to delete a false positive. File
+  text, business-card parsing, scanned-page text and PII suggestions, layout
+  exports, and searchable PDF then use the corrected word text. If a free-form
+  edit means the source word can no longer be located in sequence, the update
+  fails closed rather than guessing a coordinate. Only an explicit
+  “layout JSON”, “layout CSV”, “layout hOCR”, or “layout ALTO” action writes the source filename, dimensions,
+  current reviewed words, optional recognition provenance, confidence scores,
+  review status, and pixel/normalized geometry to the
+  user-selected download location. hOCR is escaped standalone HTML containing
+  page, line, word, bounding-box, and confidence markup; it does not execute or
+  embed source content as active HTML. ALTO is escaped XML using the official
+  4.4 page, block, line, and string hierarchy; it includes engine confidence,
+  manual-correction status, and original-recognition alternatives when present.
+  Those exports can contain sensitive text and
   should be handled like the source document. PDF pages read directly from an
   embedded text layer do not expose this overlay or layout export.
+  After every scanned page has valid word boxes, separate document-level JSON,
+  CSV, hOCR, and ALTO actions may combine all pages in the current user-visible order.
+  They retain each raster page's dimensions and source filename, reviewed word
+  text, original coordinates, confidence, and correction provenance. hOCR uses
+  zero-based page numbers and unique cross-page IDs; ALTO uses ordered Page
+  elements and one-based physical image numbers. If any page is missing valid
+  boxes, both actions remain disabled and no partial layout document is written.
+  A scanned-document OCR search is also local and transient. It compares a
+  user query of up to 200 characters with the current reviewed text, reports
+  only matching page counts in the interface, and navigates in the current
+  page order. Queries and matches are not persisted, exported, or sent through
+  IPC.
+  Scanner OCR language selection is limited to the bundled English,
+  Simplified-Chinese-plus-English, and Traditional-Chinese-plus-English data.
+  Each reviewed page retains the language used for recognition in renderer
+  memory so changing the selector cannot relabel an older page's layout export.
+  The optional table assistant uses only those same in-memory word boxes and
+  image dimensions. It looks for repeated horizontal gaps across at least three
+  lines, retains one bounded simple-table candidate, and lets the user edit each
+  inferred cell in temporary component state. It does not contact a table or
+  document-understanding service. Only an explicit confirmation writes the
+  reviewed CSV, which may contain the same sensitive text as the source. The
+  candidate is heuristic and does not establish merged cells, cross-page
+  structure, field meaning, or extraction accuracy.
 - Receipt/invoice fields are derived from the current OCR text by deterministic
   local matching. The editable merchant, date, document number, subtotal, tax,
   total, and currency values stay in renderer memory until the user explicitly
@@ -95,7 +159,12 @@ project.
   never describes the result as guaranteed anonymization.
 - Person Background uses the bundled MediaPipe SelfieSegmenter model to create
   an in-memory foreground confidence mask for a user-selected photo. Transparent,
-  blurred, or solid-color background output is rendered into a local PNG canvas.
+  blurred, solid-color, or user-selected local image background output is rendered
+  into a local PNG canvas. A custom background is limited to PNG, JPEG, WebP, or
+  BMP up to 35 MB and stays in renderer memory; cover/contain placement and focal
+  position are applied locally. Subject and background images exceeding 80 million
+  decoded pixels are rejected. Removing or resetting the custom background drops
+  the component reference, and neither image is uploaded or persisted.
   Users can paint bounded keep-person or remove-background corrections over the
   generated mask, undo or cancel those strokes, and preview the recomposited
   result. The photo, mask, correction strokes, and preview stay in renderer memory; only an explicit
@@ -107,8 +176,10 @@ project.
   pixel-changing operations invalidate only the affected page. “OCR missing
   pages” runs pages sequentially and preserves completed results if cancelled.
   Users can correct each page’s OCR text or restore the recognized original;
-  copy, structured extraction, and TXT export use the reviewed text while the
-  original coordinate suggestions stay unchanged. A combined TXT is written
+  copy, structured extraction, and TXT export use the reviewed text. Free-form
+  textarea edits do not change coordinates, while explicit per-word corrections
+  recompute PII suggestions from the corrected boxes. Restore resets the text,
+  word boxes, and PII suggestions together. A combined TXT is written
   only after an explicit export and distinguishes pages that have not been
   recognized from pages intentionally reviewed to empty.
 - Object Recognition uses either the bundled MediaPipe EfficientDet-Lite0 model
@@ -201,6 +272,11 @@ project.
   memory. Nothing is written automatically; CSS or JSON leaves the tool only
   when the user explicitly copies it. A sampled color-pair ratio is not treated
   as a complete accessibility audit of the image or design.
+  The same bounded RGBA buffer can be processed cooperatively in memory with
+  public-domain Viénot 1999 and Brettel 1997 reference transforms to preview
+  three missing-cone color-vision conditions. Replacing a preview or leaving the
+  tool revokes its temporary object URL; only explicit PNG export writes data.
+  The preview is an approximation, not a diagnosis or accessibility guarantee.
 - Body landmarks, posture calibration, and detected gestures are not written to
   disk or sent over the network.
 - Daily posture totals, reminder preferences, gesture mode, selected camera and
@@ -220,6 +296,14 @@ requests microphone permission only when the user explicitly enables its audio
 input control. “Activate Codex microphone” is a separate gesture action that
 sends Codex Desktop's fixed dictation shortcut; Codex Desktop controls its own
 microphone permission and audio data.
+
+- Batch Person Background accepts 2–12 explicitly selected subject images, with
+  the same 35 MB per-file limit and a 160 MB aggregate limit. It processes files
+  sequentially, keeps only bounded 1200 px review previews together, and regenerates
+  confirmed successful items one at a time at up to 4096 px for explicit download.
+  A failure does not stop later files, and cancellation stops after the current
+  non-interruptible model operation. Batch mode never applies one portrait's manual
+  mask strokes to another portrait and does not persist source or result images.
 
 ## Network access
 
@@ -265,3 +349,33 @@ files. The renderer keeps the file handles, first-image preview, and one encoded
 result at a time in memory; it does not upload images, copy EXIF/GPS metadata,
 overwrite sources, or retain a batch after the workspace is reset. Files leave
 the app only when the user confirms the browser downloads.
+
+Screenshot beautification accepts one explicitly selected local image. The
+source, bounded preview, style settings, and one rendered result remain in the
+renderer memory. Backgrounds, window chrome, padding, corners, and shadows are
+drawn locally; the app does not upload the screenshot, copy its metadata, or
+claim that decorative window chrome proves an originating application.
+
+Ink Extraction accepts one explicitly selected local image. The source,
+bounded preview, settings, and one rendered result remain in renderer memory.
+The app applies deterministic luminance thresholds locally, clears RGB in
+fully transparent output pixels, and writes only when the user explicitly
+exports a newly encoded PNG. Partly transparent edge pixels can still contain
+source colors, so this feature is not a privacy-redaction tool. It does not
+identify a signer, authenticate a signature or stamp, or establish identity,
+authorization, or legal validity.
+
+Color Key accepts one explicitly selected local image. The source, bounded
+preview, sampled color and one rendered result remain in renderer memory. The
+app computes OKLab color distance locally, clears RGB in fully transparent
+output pixels, and writes only after explicit PNG export. Partly transparent
+edge pixels still contain source colors, and similarly colored content anywhere
+in the image can be removed; this is not a privacy-redaction or semantic
+background-removal tool.
+
+Sticker Outline accepts one explicitly selected transparent PNG or WebP. The
+source, bounded preview, alpha-distance workspace and one rendered result stay
+in renderer memory. It scans alpha, trims to visible pixels, and draws a local
+raster outline; temporary object URLs are revoked when replaced. Only explicit
+PNG export writes data, without copying source metadata. The outline does not
+identify the depicted subject or create a vector/print cutting path.

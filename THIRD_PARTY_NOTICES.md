@@ -1,11 +1,12 @@
 # Third-party notices
 
-Codex Gesture Dock includes the production dependencies below. This inventory is
-generated from the installed production dependency graph for version
-0.5.0; CI rejects stale output.
+Codex Gesture Dock includes the production dependencies and bundled assets below.
+This inventory is generated from the installed production dependency graph and
+verified asset hashes for version 0.5.0; CI rejects stale output.
 
 | Component | Version | License |
 | --- | --- | --- |
+| Noto Sans SC Variable | google-fonts@2894aab31764 | OFL-1.1 |
 | @babel/runtime | 7.29.7 | MIT |
 | @mediapipe/tasks-vision | 0.10.35 | Apache-2.0 |
 | @napi-rs/canvas-win32-x64-msvc | 1.0.3 | MIT |
@@ -96,3 +97,8 @@ recognition. Its source model card is:
 https://storage.googleapis.com/mediapipe-assets/Model%20Card%20MediaPipe%20Selfie%20Segmentation.pdf
 Codex Gesture Dock does not transmit camera frames or selected photos to a
 remote service.
+
+The bundled Noto Sans SC variable font is loaded only when the user exports a
+searchable scanned PDF. jsPDF embeds only the glyph subset used by that PDF's
+local OCR text layer. Source revision:
+https://github.com/google/fonts/commit/2894aab31764f10f29c421bdfd2340d3b382d384

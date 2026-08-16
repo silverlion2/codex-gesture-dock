@@ -13,11 +13,32 @@ vi.mock('@zxing/browser', () => ({
   },
 }))
 
-import { CODE_IMAGE_MAX_BYTES, decodeCodeImage } from './codeImageScanner'
+import { CODE_IMAGE_MAX_BYTES, codeScanBatchCsv, decodeCodeImage, decodeCodeImageBatch } from './codeImageScanner'
 
 beforeEach(() => {
   vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:code-image')
   vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+})
+
+describe('batch code image scanning', () => {
+  it('keeps ordered successes and per-file not-found failures', async () => {
+    zxingMocks.decodeFromImageUrl
+      .mockResolvedValueOnce({ getText: () => 'FIRST', getBarcodeFormat: () => 1 })
+      .mockRejectedValueOnce(new Error('NotFoundException'))
+    const progress: string[] = []
+    const files = [new File(['a'], 'a.png', { type: 'image/png' }), new File(['b'], 'b.png', { type: 'image/png' })]
+    const results = await decodeCodeImageBatch(files, (completed, total) => progress.push(`${completed}/${total}`))
+    expect(results.map((item) => item.status)).toEqual(['detected', 'not-found'])
+    expect(results[0].text).toBe('FIRST')
+    expect(progress).toEqual(['1/2', '2/2'])
+  })
+
+  it('creates spreadsheet-safe CSV and validates batch bounds', async () => {
+    const csv = codeScanBatchCsv([{ filename: '=bad.png', status: 'detected', format: 'QR_CODE', text: '+formula', error: '' }])
+    expect(csv).toContain("'=bad.png")
+    expect(csv).toContain("'+formula")
+    await expect(decodeCodeImageBatch([new File(['x'], 'one.png', { type: 'image/png' })])).rejects.toThrow('2–20')
+  })
 })
 
 afterEach(() => {

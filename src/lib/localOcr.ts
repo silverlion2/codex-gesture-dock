@@ -18,6 +18,8 @@ export interface OcrResult {
 
 export interface OcrRegion {
   text: string
+  recognizedText?: string
+  humanReviewed?: boolean
   confidence: number
   lineId: string
   x0: number
