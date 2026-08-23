@@ -31,6 +31,21 @@ test('expanded dashboard meets automated accessibility rules', async ({ page }) 
     'aria-pressed',
     'true',
   )
+  const gestureLayout = await page.locator('.gesture-book').evaluate((book) => {
+    const cards = Array.from(book.querySelectorAll('.gesture-book-grid article'))
+    const footer = book.querySelector('footer')
+    const lastCard = cards.at(-1)
+    if (!footer || !lastCard) return null
+    return {
+      cardCount: cards.length,
+      lastCardBottom: lastCard.getBoundingClientRect().bottom,
+      footerTop: footer.getBoundingClientRect().top,
+    }
+  })
+  expect(gestureLayout?.cardCount).toBe(6)
+  expect(gestureLayout?.lastCardBottom ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(
+    gestureLayout?.footerTop ?? Number.NEGATIVE_INFINITY,
+  )
   await expectAccessible(page)
 
   await page.getByRole('button', { name: '面具' }).click()
@@ -121,6 +136,31 @@ test('compact camera dock meets automated accessibility rules', async ({ page })
   await page.getByRole('button', { name: '物体' }).click()
   await expect(page.getByRole('region', { name: '迷你物体识别控制' })).toBeVisible()
   await expectAccessible(page)
+})
+
+test('minimal screen-share mode keeps one accessible restore control', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 78, height: 78 })
+  await page.goto('/?widget=minimal')
+
+  const restore = page.getByRole('button', { name: '恢复迷你摄像头 Dock' })
+  await expect(restore).toBeVisible()
+  await expect(
+    page.getByRole('region', { name: 'Codex Gesture Dock 迷你摄像头' }),
+  ).toBeHidden()
+  await expect(page.getByLabel('实时摄像头画面')).toHaveCount(1)
+  await expect(page.locator('.widget-root')).toHaveClass(/is-minimal/)
+  await expectAccessible(page)
+
+  await restore.click()
+  await page.setViewportSize({ width: 348, height: 360 })
+  await expect(
+    page.getByRole('region', { name: 'Codex Gesture Dock 迷你摄像头' }),
+  ).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: '最小化占屏，适合屏幕共享' }),
+  ).toBeVisible()
 })
 
 test('file, task, action, and confirmation flows remain accessible', async ({

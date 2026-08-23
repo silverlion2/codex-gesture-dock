@@ -4,14 +4,24 @@ import { PassThrough } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
-const { WindowsControlCore } = require('./windows-control.cjs')
+const { WindowsControlCore, normalizePointerCommand } = require('./windows-control.cjs')
 
 function createCore(implementation, options = {}) {
   return new WindowsControlCore({
     execFileImpl: implementation,
+    powershellPath: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
     resolveScriptPath: (name) => `C:\\safe\\${name}`,
     ...options,
   })
+}
+
+function createPointerChild() {
+  const child = new EventEmitter()
+  child.stdin = new PassThrough()
+  child.stderr = new PassThrough()
+  child.killed = false
+  child.kill = vi.fn(() => { child.killed = true })
+  return child
 }
 
 describe('Windows control core', () => {
@@ -41,7 +51,8 @@ describe('Windows control core', () => {
 
     expect(result.ok).toBe(true)
     expect(execFileImpl).toHaveBeenCalledOnce()
-    const [, args] = execFileImpl.mock.calls[0]
+    const [file, args] = execFileImpl.mock.calls[0]
+    expect(file).toBe('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe')
     expect(args).toContain('C:\\safe\\codex-control.ps1')
     expect(args.slice(-2)).toEqual(['-Action', 'dictation'])
   })
@@ -144,6 +155,102 @@ describe('Windows control core', () => {
     expect(execFileImpl).not.toHaveBeenCalled()
   })
 
+  it('normalizes only bounded pointer commands', () => {
+    expect(normalizePointerCommand({ kind: 'move', x: 320, y: -40 })).toEqual({
+      kind: 'move',
+      x: 320,
+      y: -40,
+    })
+    expect(normalizePointerCommand({ kind: 'move', x: Number.NaN, y: 2 })).toBeNull()
+    expect(normalizePointerCommand({ kind: 'scroll', delta: 120 })).toBeNull()
+    expect(normalizePointerCommand({ kind: 'type', text: 'secret' })).toBeNull()
+  })
+
+  it('starts one lazy pointer helper and writes only fixed commands', () => {
+    const child = createPointerChild()
+    const spawnImpl = vi.fn(() => child)
+    const output = []
+    child.stdin.on('data', (chunk) => output.push(String(chunk)))
+    const core = createCore(vi.fn(), { spawnImpl, now: () => 1_000 })
+
+    core.setPointerEnabled(true)
+    expect(spawnImpl).not.toHaveBeenCalled()
+    expect(core.sendPointerCommand({ kind: 'move', x: 100, y: 200 }).ok).toBe(true)
+    expect(core.sendPointerCommand({ kind: 'click' }).ok).toBe(true)
+
+    expect(spawnImpl).toHaveBeenCalledOnce()
+    expect(spawnImpl.mock.calls[0][0]).toBe(
+      'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+    )
+    expect(output.join('')).toBe('move\t100\t200\nclick\n')
+    core.close()
+  })
+
+  it('backs off after pointer helper exit before allowing a restart', () => {
+    let now = 1_000
+    const children = [createPointerChild(), createPointerChild()]
+    const spawnImpl = vi.fn(() => children.shift())
+    const core = createCore(vi.fn(), { spawnImpl, now: () => now })
+
+    core.setPointerEnabled(true)
+    expect(core.sendPointerCommand({ kind: 'move', x: 10, y: 20 }).ok).toBe(true)
+    const firstChild = spawnImpl.mock.results[0].value
+    firstChild.emit('exit', 1)
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      now += 40
+      expect(core.sendPointerCommand({ kind: 'move', x: 11, y: 21 }).ok).toBe(false)
+    }
+    expect(spawnImpl).toHaveBeenCalledOnce()
+
+    now += 3_000
+    expect(core.sendPointerCommand({ kind: 'move', x: 12, y: 22 }).ok).toBe(true)
+    expect(spawnImpl).toHaveBeenCalledTimes(2)
+    core.close()
+  })
+
+  it('fails closed when pointer helper spawn throws synchronously', () => {
+    const spawnImpl = vi.fn(() => {
+      throw new Error('PowerShell is unavailable')
+    })
+    const core = createCore(vi.fn(), { spawnImpl, now: () => 1_000 })
+
+    core.setPointerEnabled(true)
+    expect(() => core.sendPointerCommand({ kind: 'click' })).not.toThrow()
+    expect(core.sendPointerCommand({ kind: 'move', x: 1, y: 2 }).ok).toBe(false)
+    expect(spawnImpl).toHaveBeenCalledOnce()
+  })
+
+  it('fails closed and stops the pointer helper during emergency stop', () => {
+    const child = createPointerChild()
+    const spawnImpl = vi.fn(() => child)
+    const core = createCore(vi.fn(), { spawnImpl, now: () => 1_000 })
+
+    core.setPointerEnabled(true)
+    core.sendPointerCommand({ kind: 'click' })
+    core.setEnabled(false)
+    const blocked = core.sendPointerCommand({ kind: 'move', x: 10, y: 20 })
+
+    expect(child.kill).toHaveBeenCalledOnce()
+    expect(blocked.ok).toBe(false)
+  })
+
+  it('rate-limits each pointer command category independently', () => {
+    const child = createPointerChild()
+    let now = 1_000
+    const core = createCore(vi.fn(), {
+      spawnImpl: vi.fn(() => child),
+      now: () => now,
+    })
+    core.setPointerEnabled(true)
+
+    expect(core.sendPointerCommand({ kind: 'move', x: 1, y: 1 }).ok).toBe(true)
+    now += 10
+    expect(core.sendPointerCommand({ kind: 'move', x: 2, y: 2 }).ok).toBe(false)
+    expect(core.sendPointerCommand({ kind: 'scroll', delta: 1 }).ok).toBe(true)
+    core.close()
+  })
+
   it('tracks only allowlisted events from the verified window monitor', () => {
     const child = new EventEmitter()
     child.stdout = new PassThrough()
@@ -170,5 +277,27 @@ describe('Windows control core', () => {
     expect(callback).toHaveBeenCalledWith(expect.objectContaining({ type: 'attached' }))
     core.close()
     expect(child.kill).toHaveBeenCalledOnce()
+  })
+
+  it('contains synchronous window-monitor launch failure and schedules bounded retry', () => {
+    vi.useFakeTimers()
+    try {
+      const spawnImpl = vi.fn(() => {
+        throw new Error('monitor unavailable')
+      })
+      const core = createCore(vi.fn(), { spawnImpl })
+
+      expect(() => core.startMonitoring('codex', vi.fn())).not.toThrow()
+      expect(core.getControlStatus().monitor).toEqual(expect.objectContaining({
+        running: false,
+        lastError: 'monitor unavailable',
+      }))
+      expect(spawnImpl).toHaveBeenCalledOnce()
+      core.stopMonitoring()
+      vi.advanceTimersByTime(2_000)
+      expect(spawnImpl).toHaveBeenCalledOnce()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

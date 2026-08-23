@@ -21,8 +21,8 @@ export function FloatingButton({
 }: FloatingButtonProps) {
   const monitoring = phase === 'monitoring'
   const label = monitoring
-    ? `当前坐姿评分 ${score ?? 0}，打开端正菜单`
-    : '打开端正坐姿助手'
+    ? `当前坐姿评分 ${score ?? 0}，恢复迷你摄像头 Dock`
+    : '恢复迷你摄像头 Dock'
 
   return (
     <div
@@ -36,6 +36,7 @@ export function FloatingButton({
         className="floating-button"
         type="button"
         aria-label={label}
+        title="恢复迷你摄像头 Dock"
         onClick={onExpand}
       >
         {monitoring && score !== null ? (

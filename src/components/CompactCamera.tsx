@@ -37,6 +37,7 @@ interface CompactCameraProps {
   framing: CameraFraming
   scanPhase: CodeScannerPhase
   faceMaskStyle: FaceMaskStyle
+  visible: boolean
   onMirrorToggle: () => void
   onRecalibrate: () => void
 }
@@ -55,11 +56,15 @@ export function CompactCamera({
   framing,
   scanPhase,
   faceMaskStyle,
+  visible,
   onMirrorToggle,
   onRecalibrate,
 }: CompactCameraProps) {
   const faceMaskCanvasRef = useRef<HTMLCanvasElement>(null)
-  const faceMaskActive = mode === 'masks' && (phase === 'calibrating' || phase === 'monitoring')
+  const faceMaskActive =
+    visible &&
+    mode === 'masks' &&
+    (phase === 'calibrating' || phase === 'monitoring')
   const faceMask = useFaceMask({
     active: faceMaskActive,
     videoRef,

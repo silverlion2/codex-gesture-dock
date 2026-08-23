@@ -1,4 +1,8 @@
 const { execFile, spawn } = require('node:child_process')
+const {
+  assertWindowsPowerShellPath,
+  getWindowsPowerShellPath,
+} = require('./windows-powershell.cjs')
 
 const CODEX_ACTION_LABELS = Object.freeze({
   quick_chat: '已打开 Codex 快速对话',
@@ -43,10 +47,33 @@ const MONITOR_EVENT_TYPES = new Set([
   'location',
   'name',
 ])
+const POINTER_COMMAND_TYPES = new Set(['move', 'click', 'scroll'])
+const POINTER_COORDINATE_LIMIT = 100_000
+const POINTER_RATE_LIMIT_MS = Object.freeze({ move: 35, click: 320, scroll: 100 })
+const POINTER_HELPER_RETRY_MS = 3_000
 
 function cleanString(value, maximum = MAX_UI_STRING) {
   if (typeof value !== 'string') return ''
   return value.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, maximum)
+}
+
+function normalizePointerCommand(value) {
+  if (!value || typeof value !== 'object' || !POINTER_COMMAND_TYPES.has(value.kind)) {
+    return null
+  }
+  if (value.kind === 'click') return { kind: 'click' }
+  if (value.kind === 'scroll') {
+    return value.delta === -1 || value.delta === 1
+      ? { kind: 'scroll', delta: value.delta }
+      : null
+  }
+  if (
+    !Number.isInteger(value.x) ||
+    !Number.isInteger(value.y) ||
+    Math.abs(value.x) > POINTER_COORDINATE_LIMIT ||
+    Math.abs(value.y) > POINTER_COORDINATE_LIMIT
+  ) return null
+  return { kind: 'move', x: value.x, y: value.y }
 }
 
 function emptyDesktopStatus(message = '尚未检查 Codex 桌面窗口') {
@@ -103,6 +130,7 @@ class WindowsControlCore {
     execFileImpl = execFile,
     spawnImpl = spawn,
     resolveScriptPath,
+    powershellPath = getWindowsPowerShellPath(),
     onAudit,
     now = () => Date.now(),
   } = {}) {
@@ -112,6 +140,7 @@ class WindowsControlCore {
     this.execFile = execFileImpl
     this.spawn = spawnImpl
     this.resolveScriptPath = resolveScriptPath
+    this.powershellPath = assertWindowsPowerShellPath(powershellPath)
     this.onAudit = typeof onAudit === 'function' ? onAudit : () => {}
     this.now = now
     this.enabled = true
@@ -120,6 +149,10 @@ class WindowsControlCore {
     this.monitorCallback = null
     this.monitorDesired = false
     this.monitorRestartTimer = null
+    this.pointerProcess = null
+    this.pointerRequested = false
+    this.pointerRetryAfter = Number.NEGATIVE_INFINITY
+    this.lastPointerCommandAt = { move: Number.NEGATIVE_INFINITY, click: Number.NEGATIVE_INFINITY, scroll: Number.NEGATIVE_INFINITY }
   }
 
   supportsAction(programId, action) {
@@ -131,6 +164,7 @@ class WindowsControlCore {
 
   setEnabled(enabled) {
     this.enabled = Boolean(enabled)
+    if (!this.enabled) this.#stopPointerProcess()
     this.#audit('control-state', {
       enabled: this.enabled,
       ok: true,
@@ -144,7 +178,73 @@ class WindowsControlCore {
       actionPolicy: 'allowlist',
       auditEnabled: true,
       monitor: { ...this.monitorStatus },
+      pointerEnabled: this.enabled && this.pointerRequested,
     }
+  }
+
+  setPointerEnabled(enabled) {
+    const requested = Boolean(enabled)
+    if (requested && !this.pointerRequested) {
+      this.pointerRetryAfter = Number.NEGATIVE_INFINITY
+    }
+    this.pointerRequested = requested
+    if (!this.pointerRequested || !this.enabled) this.#stopPointerProcess()
+    const result = {
+      enabled: this.enabled && this.pointerRequested,
+      message: this.enabled && this.pointerRequested
+        ? '空中鼠标已就绪'
+        : this.enabled
+          ? '空中鼠标已关闭'
+          : 'Windows 桌面控制已暂停',
+    }
+    this.#audit('pointer-state', { enabled: result.enabled, ok: true })
+    return result
+  }
+
+  sendPointerCommand(command) {
+    const normalized = normalizePointerCommand(command)
+    if (!normalized) {
+      this.#audit('pointer-command', { ok: false, reason: 'invalid-command' })
+      return { ok: false, message: '空中鼠标拒绝了无效输入' }
+    }
+    if (!this.enabled || !this.pointerRequested) {
+      return { ok: false, message: '空中鼠标未启用或已急停' }
+    }
+    const now = this.now()
+    if (now - this.lastPointerCommandAt[normalized.kind] < POINTER_RATE_LIMIT_MS[normalized.kind]) {
+      return { ok: false, message: '空中鼠标输入过快，已合并' }
+    }
+    this.lastPointerCommandAt[normalized.kind] = now
+
+    const child = this.#ensurePointerProcess(now)
+    if (!child?.stdin || typeof child.stdin.write !== 'function') {
+      return { ok: false, message: '空中鼠标 helper 正在冷却或暂时不可用' }
+    }
+    const line = normalized.kind === 'move'
+      ? `move\t${normalized.x}\t${normalized.y}\n`
+      : normalized.kind === 'scroll'
+        ? `scroll\t${normalized.delta}\n`
+        : 'click\n'
+    try {
+      child.stdin.write(line)
+    } catch (error) {
+      this.pointerRetryAfter = this.now() + POINTER_HELPER_RETRY_MS
+      this.#stopPointerProcess()
+      this.#audit('pointer-command', {
+        kind: normalized.kind,
+        ok: false,
+        reason: cleanString(error?.message, 120) || 'write-failed',
+      })
+      return { ok: false, message: '空中鼠标 helper 暂时不可用' }
+    }
+    if (normalized.kind !== 'move') {
+      this.#audit('pointer-command', {
+        kind: normalized.kind,
+        ok: true,
+        ...(normalized.kind === 'scroll' ? { delta: normalized.delta } : {}),
+      })
+    }
+    return { ok: true, message: '空中鼠标输入已发送' }
   }
 
   async runAction(programId, action) {
@@ -389,24 +489,98 @@ class WindowsControlCore {
   }
 
   close() {
+    this.pointerRequested = false
+    this.#stopPointerProcess()
     this.stopMonitoring()
+  }
+
+  #ensurePointerProcess(now = this.now()) {
+    if (this.pointerProcess && !this.pointerProcess.killed) return this.pointerProcess
+    if (now < this.pointerRetryAfter) return null
+    let child
+    try {
+      child = this.spawn(
+        this.powershellPath,
+        [
+          '-NoLogo',
+          '-NoProfile',
+          '-NonInteractive',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-File',
+          this.resolveScriptPath('windows-pointer-control.ps1'),
+        ],
+        { windowsHide: true, stdio: ['pipe', 'ignore', 'pipe'] },
+      )
+    } catch (error) {
+      this.pointerRetryAfter = now + POINTER_HELPER_RETRY_MS
+      this.#audit('pointer-helper', {
+        ok: false,
+        reason: cleanString(error?.message, 500) || 'spawn-failed',
+      })
+      return null
+    }
+    this.pointerProcess = child
+    let errorBuffer = ''
+    child.stdin?.on('error', (error) => {
+      errorBuffer = cleanString(error?.message, 500)
+    })
+    child.stderr?.on('data', (chunk) => {
+      errorBuffer = `${errorBuffer}${String(chunk)}`.slice(-500)
+    })
+    child.once('error', (error) => {
+      if (this.pointerProcess !== child) return
+      this.pointerProcess = null
+      this.pointerRetryAfter = this.now() + POINTER_HELPER_RETRY_MS
+      this.#audit('pointer-helper', {
+        ok: false,
+        reason: cleanString(error?.message, 500) || 'spawn-failed',
+      })
+    })
+    child.once('exit', (code) => {
+      if (this.pointerProcess !== child) return
+      this.pointerProcess = null
+      this.pointerRetryAfter = this.now() + POINTER_HELPER_RETRY_MS
+      this.#audit('pointer-helper', {
+        ok: false,
+        reason: cleanString(errorBuffer, 500) || `pointer helper exited (${Number(code) || 0})`,
+      })
+    })
+    this.#audit('pointer-helper', { ok: true, state: 'started' })
+    return child
+  }
+
+  #stopPointerProcess() {
+    const child = this.pointerProcess
+    this.pointerProcess = null
+    if (child && !child.killed) child.kill()
   }
 
   #launchMonitor() {
     if (!this.monitorDesired || this.monitorProcess) return
-    const child = this.spawn(
-      'powershell.exe',
-      [
-        '-NoLogo',
-        '-NoProfile',
-        '-NonInteractive',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-File',
-        this.resolveScriptPath('codex-window-monitor.ps1'),
-      ],
-      { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] },
-    )
+    let child
+    try {
+      child = this.spawn(
+        this.powershellPath,
+        [
+          '-NoLogo',
+          '-NoProfile',
+          '-NonInteractive',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-File',
+          this.resolveScriptPath('codex-window-monitor.ps1'),
+        ],
+        { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] },
+      )
+    } catch (error) {
+      this.monitorStatus = {
+        ...emptyMonitorStatus(),
+        lastError: cleanString(error?.message, 500) || 'monitor spawn failed',
+      }
+      this.#scheduleMonitorRestart()
+      return
+    }
     this.monitorProcess = child
     this.monitorStatus = {
       ...this.monitorStatus,
@@ -429,23 +603,31 @@ class WindowsControlCore {
     child.stderr?.on('data', (chunk) => {
       errorBuffer = `${errorBuffer}${String(chunk)}`.slice(-500)
     })
-    child.once('error', (error) => {
-      errorBuffer = cleanString(error?.message, 500)
-    })
-    child.once('exit', (code) => {
+    let finished = false
+    const finish = (code, error) => {
+      if (finished) return
+      finished = true
       if (this.monitorProcess === child) this.monitorProcess = null
       this.monitorStatus = {
         ...emptyMonitorStatus(),
-        lastError: cleanString(errorBuffer, 500) || `monitor exited (${Number(code) || 0})`,
+        lastError:
+          cleanString(error?.message, 500) ||
+          cleanString(errorBuffer, 500) ||
+          `monitor exited (${Number(code) || 0})`,
       }
-      if (this.monitorDesired) {
-        this.monitorRestartTimer = setTimeout(() => {
-          this.monitorRestartTimer = null
-          this.#launchMonitor()
-        }, 2_000)
-        this.monitorRestartTimer.unref?.()
-      }
-    })
+      this.#scheduleMonitorRestart()
+    }
+    child.once('error', (error) => finish(null, error))
+    child.once('exit', (code) => finish(code))
+  }
+
+  #scheduleMonitorRestart() {
+    if (!this.monitorDesired || this.monitorRestartTimer) return
+    this.monitorRestartTimer = setTimeout(() => {
+      this.monitorRestartTimer = null
+      this.#launchMonitor()
+    }, 2_000)
+    this.monitorRestartTimer.unref?.()
   }
 
   #handleMonitorLine(line) {
@@ -526,7 +708,7 @@ class WindowsControlCore {
   #runScript(scriptName, args) {
     return new Promise((resolve) => {
       this.execFile(
-        'powershell.exe',
+        this.powershellPath,
         [
           '-NoLogo',
           '-NoProfile',
@@ -551,4 +733,5 @@ module.exports = {
   emptyDesktopStatus,
   emptyMonitorStatus,
   emptyUiStatus,
+  normalizePointerCommand,
 }

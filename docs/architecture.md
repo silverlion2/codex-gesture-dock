@@ -20,6 +20,7 @@
 | libDaltonLens 参考算法 | 红/绿色觉缺失使用 Viénot 1999、蓝色觉缺失使用 Brettel 1997 的线性 sRGB 预览 | 公共领域常数的 TypeScript 适配；不增加运行时依赖，像素协作分块且结果只供人工无障碍复核 |
 | Codex App Server | 本机任务、通知、逐次审批和 turn 操作 | 本机子进程，所有输入仍做边界验证 |
 | PowerShell helpers | Codex 身份检查和 Windows 固定快捷动作 | 固定脚本与固定参数白名单 |
+| Windows System.Speech helper | 用户明确开启后的本机固定语法语音命令 | 按需独立进程；只输出白名单动作与固定短语，不输出自由转写或音频 |
 | GitHub Releases | 安装版更新源 | 仅接受 electron-builder 固定仓库配置 |
 
 ## 关键数据流
@@ -50,7 +51,7 @@
 
 `ocrLayoutExport.ts` 把同一组已限制到页面范围的词框序列化为内部 schema v1 JSON、公式安全 CSV、hOCR 1.2 兼容 HTML 或 ALTO 4.4 XML。schema v1 以可选 `recognizedText` 和 `humanReviewed` 字段向后兼容地记录首次识别来源；CSV 暴露同名列，hOCR 在 title 中附加人工复核标记。hOCR 声明 `ocr_page`、`ocrx_line`、`ocrx_word` 能力，页面/行/词使用左上角像素 `bbox`，词写入仍代表引擎评分的整数 `x_wconf`。ALTO 使用官方 v4 命名空间和 4.4 schema URL，输出 Description、pixel MeasurementUnit、Page、全页 PrintSpace、TextBlock、TextLine 和 String；Tesseract 0–100 分转换为 0–1 `WC`，人工复核写 `CS=true`，首次识别文字写入转义后的 `ALTERNATIVE PURPOSE="original-recognition"`。语言把 `eng/chi_sim/chi_tra` 映射到 `en/zh-Hans/zh-Hant`。四种导出都转义源文件名和文字，使用逐词修正后的文字与原词框；整段自由编辑不伪称已重排版面。
 
-`useMediaDevices` 监听本机设备变化并提供摄像头/麦克风选择；所选设备 ID、镜像和填满/完整取景方式保存在 renderer 的版本化 `localStorage`。切换摄像头会取消旧推理帧、停止旧视频轨道并用指定 `deviceId` 重启同一姿态会话。麦克风由独立的 `useAudioInput` 流管理，默认关闭；用户明确开启后使用 Web Audio `AnalyserNode` 计算本机输入电平，不连接扬声器、不录制、不转写，关闭或切换设备时立即停止旧音频轨道。
+`useMediaDevices` 监听本机设备变化并提供摄像头/麦克风选择；所选设备 ID、镜像和填满/完整取景方式保存在 renderer 的版本化 `localStorage`。切换摄像头会取消旧推理帧、停止旧视频轨道并用指定 `deviceId` 重启同一姿态会话。麦克风由独立的 `useAudioInput` 流管理，默认关闭；用户明确开启后使用 Web Audio `AnalyserNode` 计算本机输入电平，不连接扬声器、不录制、不转写。关闭、切换设备、进入最小占屏或页面隐藏都会停止旧音频轨道、取消动画帧并关闭 `AudioContext`；恢复可见后不会自动重新申请麦克风。
 
 文件 OCR 与名片 OCR 不要求摄像头权限。构建前 `scripts/copy-ocr-assets.mjs` 把 Tesseract worker、兼容的 LSTM core、轻量 `best_int` 英文/简中/繁中语言数据和 PDF.js worker 复制到 `public/ocr/`，由 Vite 一并打包。图像直接交给本机 OCR worker；PDF 先读取文本层，只有缺少有效文本层的页面才以 2× canvas 渲染后 OCR。单文件上限 35 MB，PDF 上限 20 页。单文件入口创建一次性会话；多文件、最多 20 张名片和“未识别扫描页”批次创建固定语言、严格单飞的短生命周期会话，同一会话按顺序复用一个懒加载 worker。会话在完成、取消、异常或工具卸载后确定性终止，原文件与识别结果不进入 IPC 或持久存储。
 
@@ -100,9 +101,11 @@ MRZ 提取只在用户从完成的文件 OCR 或扫描页 OCR 结果中明确触
 
 `colorVisionSimulation.ts` 复用同一有界 RGBA：先把 sRGB 解码到线性 RGB，红/绿色觉缺失使用 libDaltonLens 公共领域 Viénot 1999 预计算矩阵，蓝色觉缺失按分离平面选择 Brettel 1997 两个矩阵之一，再在线性空间与原图按 0%–100% 强度插值并编码回 sRGB；alpha 原样保留。最多 400 万像素按每块 20 万像素协作让出事件循环并在块间检查 `AbortSignal`，设置变化会取消旧任务。结果经 Canvas 编码为 PNG 对象 URL，替换、重选或卸载时撤销；只有明确下载才离开内存。模拟是缺失型色觉的近似人工复核，不代表异常型个体、医学诊断或无障碍合规。
 
-模式切换时扫码循环立即停止，手势循环只在姿态模式运行，避免与扫码争用主线程。姿态流继续拥有摄像头生命周期，因此结束会话仍能统一停止所有视频轨道；独立音频轨道只由用户可见的麦克风开关管理。
+模式切换时扫码循环立即停止，手势循环只在姿态模式运行，避免与扫码争用主线程。进入最小占屏后，隐藏的扫码和面具循环也立即停止；页面不可见时视觉循环跳过推理。姿态流继续拥有摄像头生命周期，因此结束会话仍能统一停止所有视频轨道；独立电平表音频轨道在最小占屏或页面隐藏时主动释放，恢复后只能由用户可见的麦克风开关重新开启。会话级固定语音 helper 是另一条明确开关的本机链路，不复用电平表流。
 
-折叠与展开只改变 Electron 主窗口边界和 React 布局，不卸载 `HTMLVideoElement`，因此摄像头流、姿态会话和当前工具模式在 `348 × 360` 迷你 Dock 与默认 `1120 × 760` 完整面板之间连续保留。迷你位置与展开位置/尺寸分别写入 Electron `userData`；展开面板可调整到不小于 `980 × 760`，恢复时会限制在当前显示器工作区内。摄像头运行时迷你控制条仅在鼠标移入、键盘聚焦或设备菜单打开时显示。
+应用壳层和实时监测控件是启动必需代码。OCR、文档、人脸隐私、面具设置、背景、物体、图片比较和颜色分析面板通过 `React.lazy` 按模式拆分，只有用户打开对应工具才解析；各面板内的 MediaPipe、Tesseract、OpenCV、PDF.js 和 ZXing 仍保留第二层运行时动态加载。这样普通坐姿/手势会话不会为未使用的编辑工具支付首屏解析与初始化成本。
+
+最小占屏、折叠与展开只改变 Electron 主窗口边界和 React 布局，不卸载 `HTMLVideoElement`，因此摄像头流、姿态会话和当前工具模式在 `78 × 78` 状态气泡、`348 × 360` 迷你 Dock 与默认 `1120 × 760` 完整面板之间连续保留。主进程以 `minimal | collapsed | expanded` 单一视图状态校验 renderer IPC；旧的布尔展开 API 继续映射到折叠/展开以保持兼容。三种位置及可调整的展开尺寸分别写入 Electron `userData`，恢复时限制在当前显示器工作区内；展开面板不小于 `980 × 760`。最小占屏时原控制面板保持挂载但设为不可交互，只显示项目已有的可拖动姿态气泡，单击恢复迷你 Dock；应用不申请屏幕捕获权限，也不自动判断用户是否正在共享屏幕。摄像头运行时迷你控制条仅在鼠标移入、键盘聚焦或设备菜单打开时显示。
 
 批量图片扫码由 `codeImageScanner.ts` 在单图解码外层验证 2–20 张、单张 35 MB 与合计 200 MB，再按文件可见顺序串行复用同一解码函数；每张完成后让出事件循环并检查 `AbortSignal`，未找到或错误转为独立结果项而不终止后续文件。CSV 逐单元格引用、双写引号并为公式前缀添加撇号。
 
@@ -118,10 +121,12 @@ MRZ 提取只在用户从完成的文件 OCR 或扫描页 OCR 结果中明确触
 
 `getUserMedia(video only)` → HTML video → 本地 Pose/Gesture 模型 → 状态机保持确认 → 固定动作标识 → IPC 白名单 → Codex 或 Windows helper。
 
-用户点击打开麦克风 → `getUserMedia(audio only)` → 本地 `AnalyserNode` → 0–100 输入电平 UI；音频不进入视频元素、IPC、文件或网络。
+用户点击打开麦克风 → `getUserMedia(audio only)` → 本地 `AnalyserNode` → 量化后的 0–100 输入电平 UI；电平最多约每 160 ms 更新一次，相同量化值不触发 React 更新。最小占屏或页面不可见时取消采样并释放 `MediaStreamTrack`/`AudioContext`，恢复后保持关闭，直到用户再次明确开启。音频不进入视频元素、IPC、文件或网络。
+
+用户在设置中明确开启语音命令 → main 以绝对 `System32\\WindowsPowerShell\\v1.0\\powershell.exe` 路径按需启动固定 helper → helper 枚举系统已安装 `System.Speech` 识别器并加载与文化匹配的“唤醒词 + 固定命令” Grammar → 系统默认麦克风 → 仅把固定动作标识、匹配短语、相对置信度和时间写成 JSONL → main 再次验证动作白名单与速率 → renderer 复用既有 Codex/Windows 动作执行路径。该链路不接收 renderer 提供的语法、脚本、文字或路径，不保存音频和自由转写；语音不参与 Codex 审批。helper 只在本次应用会话内启用，关闭、异常或退出时结束且不无限自动重启；关闭后晚到的 stdout/stderr 不再改变状态或产生动作。
 
 视频帧只存在于渲染器内存和画布中，不写盘、不进入 IPC、不发送到网络。
-姿态推理在渲染器中限制为 10 FPS；每次动画帧先安排下一次检查，因此摄像头启动或恢复期间短暂缺少可用帧不会永久终止监测。手势推理维持 135 ms 间隔，两个识别器都只处理新视频帧。
+姿态推理正常限制为 10 FPS；最小占屏或空中鼠标模式自动降到约 4–5 FPS，并优先把摄像头约束降到 640 × 360、15–20 FPS，恢复普通模式后回到 1280 × 720 首选约束。资源节省状态下姿态 UI 最多约每 500 ms 提交一次，最小占屏不绘制隐藏的姿态覆盖层。固定手势维持 135 ms 间隔；空中鼠标复用同一个 Gesture Recognizer 的手部关键点，以约 13 FPS 运行。两个识别器都只处理新视频帧，页面不可见时跳过推理；高频指针位置留在 ref/IPC 路径，不进入 React 每帧状态。摄像头不支持动态约束时只保留推理降频，不中断会话。Electron 自动冒烟还记录启动耗时、进程数、private memory 与总 working set；折叠主窗门禁为 5 秒/6 进程/256 MB private，展开+任务窗+最小化恢复流程为 10 秒/8 进程/384 MB private。working set 因跨进程共享 DLL 重复计算，只作趋势观测，不作硬门禁。
 
 ### Codex 控制
 
@@ -129,7 +134,9 @@ Electron main 启动 `codex app-server`，通过 JSONL 请求任务和 turn。�
 
 ### Windows 控制
 
-Renderer 只能请求 `WINDOWS_ACTIONS` 中的枚举值。Main 使用 `execFile` 调用固定 PowerShell 文件，不经过 shell 字符串拼接；helper 返回的动作和后端字段必须与请求完全匹配。紧急停止在 helper 启动之前检查。
+Renderer 的固定系统动作只能请求 `WINDOWS_ACTIONS` 中的枚举值。Main 使用 `execFile` 与本机绝对 System32 PowerShell 路径调用固定脚本，不经过 shell 字符串拼接或可执行文件搜索；helper 返回的动作和后端字段必须与请求完全匹配。紧急停止在 helper 启动之前检查。
+
+空中鼠标使用独立的受限 IPC：只接受有限的 `move(x, y)`、`click` 和 `scroll(±1)` 结构。Renderer 必须先观察至少 250 ms 的稳定、未捏合指向才允许单击；丢手、页面隐藏、模式关闭或出现 Codex 审批都会清除武装、平滑坐标并关闭 main 指针状态。Main 复核可信主窗口发送方、数值范围、当前显示器边界和分类型冷却时间，再把整数坐标或固定滚轮步长写入由绝对 System32 PowerShell 路径按需启动的 `windows-pointer-control.ps1` 标准输入。helper 只解析制表符分隔的固定指令，不执行调用方脚本或文本；进程在模式关闭、急停、崩溃或应用退出时结束，异常退出后至少等待 3 秒才可重启。连续移动不写逐帧审计，只审计模式切换、单击、滚动和 helper 故障。
 
 ## 安全边界
 
@@ -145,6 +152,7 @@ Renderer 只能请求 `WINDOWS_ACTIONS` 中的枚举值。Main 使用 `execFile`
 |---|---|---|---|
 | 摄像头拒绝/占用 | 无实时监测 | `getUserMedia` 错误态 | 显示可操作错误并允许重试 |
 | 麦克风拒绝/断开 | 无输入电平 | 独立音频流错误态/设备变化 | 显示错误、停止旧轨道并允许选择其他设备 |
+| 缺少语音识别器/默认麦克风 | 无语音命令 | helper `unavailable`/`error` 状态 | 保持语音关闭并提示安装匹配语言或检查系统默认麦克风；手势与键鼠不受影响 |
 | OCR 文件过大/页数过多 | 文件不处理 | 读取前限制检查 | 显示 35 MB / 20 页边界并允许重选 |
 | OCR worker 初始化失败 | 当前文件无法识别 | worker 创建或本地资源加载异常 | 终止 worker、显示错误并允许重选；不回退网络模型 |
 | OpenCV worker 初始化/处理失败 | 当前扫描页不可用 | 隔离 worker 错误事件或结构化错误响应 | 拒绝当前请求、显示错误；下一次请求可重新创建 worker，不放宽 CSP、不回退网络处理 |
@@ -152,6 +160,7 @@ Renderer 只能请求 `WINDOWS_ACTIONS` 中的枚举值。Main 使用 `execFile`
 | 视频帧暂时未就绪 | 画面启动或恢复稍慢 | `readyState` / 新帧时间检查 | 保持低成本帧调度，可用帧到达后自动恢复 |
 | Codex App Server 不可用 | 任务和审批不可用 | runtime 状态与超时 | 保留 UI、显示错误、下次请求重连 |
 | Helper 输出无效 | 动作不执行 | JSON/字段严格验证 | 失败关闭并写隐私安全审计 |
+| 空中鼠标 helper 退出 | 指针控制暂停 | 子进程 exit/error | 丢弃当前命令并进入 3 秒冷却；冷却后或用户关闭再开启时才可重启，急停状态不重启 |
 | Renderer 崩溃/无响应 | 窗口暂时不可用 | Electron 进程事件 | 一分钟最多恢复两次，超限关闭/退出 |
 | 更新下载失败 | 保持当前版本 | updater error 事件 | 显示清理后的错误，可稍后重试 |
 
@@ -179,12 +188,12 @@ Renderer 只能请求 `WINDOWS_ACTIONS` 中的枚举值。Main 使用 `execFile`
 
 ### 表情动态面具
 
-面具模式复用主面板现有 `HTMLVideoElement`，不重新申请摄像头权限。`useFaceMask` 仅在面具模式且摄像头进入 monitoring 状态后，动态导入 `FaceLandmarker`，以 20 FPS 上限执行同步视频推理，并把官方模型输出的 478 个关键点与 52 个 blendshape 映射为张嘴、微笑、左右眨眼和抬眉五个平滑控制量。`faceMasks.ts` 在与视频同原始尺寸的透明 Canvas 上绘制三种面具，Canvas 和视频共享 cover/contain 与镜像变换，因此不复制视频像素。离开模式会取消动画帧并清空 Canvas；关键点、表情系数和画面不持久化、不进入 IPC、不上传。模型来自 MediaPipe 官方 [Face Landmarker float16 asset](https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task)，仓库内 SHA-256 为 `64184E229B263107BC2B804C6625DB1341FF2BB731874B0BCC2FE6544E0BC9FF`。
+面具模式复用主面板现有 `HTMLVideoElement`，不重新申请摄像头权限。`useFaceMask` 仅在面具模式、面板可见且摄像头进入 calibrating/monitoring 状态后动态导入 `FaceLandmarker`，以约 15 FPS 上限执行同步视频推理，并把官方模型输出的 478 个关键点与 52 个 blendshape 映射为张嘴、微笑、左右眨眼和抬眉五个平滑控制量。`faceMasks.ts` 在与视频同原始尺寸的透明 Canvas 上绘制三种面具，Canvas 和视频共享 cover/contain 与镜像变换，因此不复制视频像素。离开模式、最小占屏或页面隐藏会取消或暂停动画工作并清空不可见 Canvas；关键点、表情系数和画面不持久化、不进入 IPC、不上传。模型来自 MediaPipe 官方 [Face Landmarker float16 asset](https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task)，仓库内 SHA-256 为 `64184E229B263107BC2B804C6625DB1341FF2BB731874B0BCC2FE6544E0BC9FF`。
 
 - 姿态日统计：浏览器 localStorage，仅保存当天秒数计数。
 - 手势模式：浏览器 localStorage。
 - 摄像头/麦克风设备 ID、取景与镜像偏好：浏览器 localStorage；不保存媒体内容。
-- 迷你与展开窗口边界：Electron userData JSON。
+- 最小占屏、迷你与展开窗口边界：Electron userData JSON。
 - Codex 任务绑定与 Windows 控制开关：Electron userData JSON。
 - Windows 控制审计：按天 JSONL，只记录动作、结果、时间和必要的进程标识，不记录提示词、文件内容或摄像头数据。
 

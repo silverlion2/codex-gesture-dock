@@ -23,6 +23,8 @@ const {
   normalizeCodexNotification,
 } = require('./codex-integration.cjs')
 const { WindowsControlCore } = require('./windows-control.cjs')
+const { WindowsVoiceControl } = require('./windows-voice-control.cjs')
+const { mapNormalizedPointerCommand } = require('./pointer-command.cjs')
 const {
   constrainBounds,
   parseWidgetWindowState,
@@ -41,10 +43,12 @@ protocol.registerSchemesAsPrivileged([
   },
 ])
 
+const MINIMAL_SIZE = { width: 78, height: 78 }
 const COLLAPSED_SIZE = { width: 348, height: 360 }
 const EXPANDED_SIZE = { width: 1120, height: 760 }
 const EXPANDED_MIN_SIZE = { width: 980, height: 760 }
 const TASK_PICKER_SIZE = { width: 620, height: 720 }
+const WIDGET_VIEW_MODES = new Set(['minimal', 'collapsed', 'expanded'])
 const SCREEN_GAP = 14
 const APP_HOST = 'codex-gesture-dock'
 const APP_URL_PREFIX = `app://${APP_HOST}/`
@@ -52,7 +56,9 @@ const DEV_SERVER_ORIGIN = 'http://127.0.0.1:5173'
 const isSmokeTest = process.argv.includes('--smoke-test')
 const isTaskWindowSmokeTest = process.argv.includes('--smoke-test-tasks')
 const isAnySmokeTest = isSmokeTest || isTaskWindowSmokeTest
+const smokeStartedAt = isAnySmokeTest ? Date.now() : 0
 if (isAnySmokeTest) {
+  app.disableHardwareAcceleration()
   app.setPath(
     'userData',
     fs.mkdtempSync(path.join(os.tmpdir(), 'codex-gesture-dock-smoke-')),
@@ -68,8 +74,8 @@ const smokeReportPath = path.join(
 let widgetWindow = null
 let taskPickerWindow = null
 let isQuitting = false
-let expanded = false
-let widgetWindowState = { collapsed: null, expanded: null }
+let widgetViewMode = 'collapsed'
+let widgetWindowState = { minimal: null, collapsed: null, expanded: null }
 let widgetWindowStateTimer = null
 let lastCodexActionAt = 0
 let lastWindowsActionAt = 0
@@ -95,6 +101,20 @@ const desktopAutoUpdater = new DesktopAutoUpdater({
 const windowsControl = new WindowsControlCore({
   resolveScriptPath: getDesktopScriptPath,
   onAudit: appendWindowsControlAudit,
+})
+const voiceControl = new WindowsVoiceControl({
+  resolveScriptPath: getDesktopScriptPath,
+  onAudit: appendWindowsControlAudit,
+  onCommand: (command) => {
+    if (widgetWindow && !widgetWindow.isDestroyed()) {
+      widgetWindow.webContents.send('voice:command', command)
+    }
+  },
+  onStatus: (status) => {
+    if (widgetWindow && !widgetWindow.isDestroyed()) {
+      widgetWindow.webContents.send('voice:status', status)
+    }
+  },
 })
 const codexAdapter = new CodexProgramAdapter({
   windowsControl,
@@ -147,6 +167,12 @@ function cleanRequestText(value, fallback) {
   const text = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''
   if (!text) return fallback
   return text.length > 800 ? `${text.slice(0, 799)}…` : text
+}
+
+function mapPointerCommandToCurrentDisplay(value) {
+  const cursor = screen.getCursorScreenPoint()
+  const workArea = screen.getDisplayNearestPoint(cursor).workArea
+  return mapNormalizedPointerCommand(value, workArea)
 }
 
 function normalizeCodexApproval(request) {
@@ -326,10 +352,39 @@ async function openCodexThread(threadId) {
 function finishSmoke(payload, exitCode) {
   if (!isAnySmokeTest) return
 
+  let runtimeMetrics = null
+  try {
+    const metrics = app.getAppMetrics()
+    const workingSetKb = metrics.reduce(
+      (total, metric) => total + (Number(metric.memory?.workingSetSize) || 0),
+      0,
+    )
+    const privateBytesKb = metrics.reduce(
+      (total, metric) => total + (Number(metric.memory?.privateBytes) || 0),
+      0,
+    )
+    runtimeMetrics = {
+      budget: isTaskWindowSmokeTest
+        ? { elapsedMs: 10_000, privateMb: 384, processCount: 8 }
+        : { elapsedMs: 5_000, privateMb: 256, processCount: 6 },
+      elapsedMs: Date.now() - smokeStartedAt,
+      processCount: metrics.length,
+      privateMb: Math.round((privateBytesKb / 1024) * 10) / 10,
+      workingSetMb: Math.round((workingSetKb / 1024) * 10) / 10,
+    }
+    runtimeMetrics.withinBudget =
+      runtimeMetrics.elapsedMs <= runtimeMetrics.budget.elapsedMs &&
+      runtimeMetrics.privateMb <= runtimeMetrics.budget.privateMb &&
+      runtimeMetrics.processCount <= runtimeMetrics.budget.processCount
+  } catch { }
+
   const report = {
     ...payload,
+    passed: payload.passed === true && runtimeMetrics?.withinBudget !== false,
+    runtimeMetrics,
     timestamp: new Date().toISOString(),
   }
+  const finalExitCode = report.passed ? exitCode : Math.max(1, exitCode)
 
   try {
     fs.mkdirSync(path.dirname(smokeReportPath), { recursive: true })
@@ -339,9 +394,10 @@ function finishSmoke(payload, exitCode) {
   }
 
   console.log(JSON.stringify(report))
+  voiceControl.close()
   codexAdapter.close()
-  setTimeout(() => process.exit(exitCode), 1_500)
-  app.exit(exitCode)
+  setTimeout(() => process.exit(finalExitCode), 1_500)
+  app.exit(finalExitCode)
 }
 
 async function saveSmokeScreenshot(targetWindow, filename) {
@@ -375,7 +431,7 @@ function loadWidgetWindowState() {
       JSON.parse(fs.readFileSync(getWidgetWindowStatePath(), 'utf8')),
     )
   } catch {
-    widgetWindowState = { collapsed: null, expanded: null }
+    widgetWindowState = { minimal: null, collapsed: null, expanded: null }
   }
 }
 
@@ -400,19 +456,25 @@ function scheduleWidgetWindowStatePersist() {
 
 function rememberCurrentWidgetBounds() {
   if (!widgetWindow || widgetWindow.isDestroyed()) return
-  const mode = expanded ? 'expanded' : 'collapsed'
-  widgetWindowState[mode] = widgetWindow.getBounds()
+  widgetWindowState[widgetViewMode] = widgetWindow.getBounds()
   scheduleWidgetWindowStatePersist()
+}
+
+function getWidgetModeSize(mode) {
+  if (mode === 'expanded') return EXPANDED_SIZE
+  if (mode === 'minimal') return MINIMAL_SIZE
+  return COLLAPSED_SIZE
 }
 
 function getStoredWidgetBounds(mode) {
   const stored = widgetWindowState[mode]
   if (!stored) return null
   const { workArea } = screen.getDisplayMatching(stored)
+  const defaultSize = getWidgetModeSize(mode)
   return constrainBounds(stored, workArea, {
-    defaultSize: mode === 'expanded' ? EXPANDED_SIZE : COLLAPSED_SIZE,
-    minSize: mode === 'expanded' ? EXPANDED_MIN_SIZE : COLLAPSED_SIZE,
-    fixedSize: mode === 'collapsed',
+    defaultSize,
+    minSize: mode === 'expanded' ? EXPANDED_MIN_SIZE : defaultSize,
+    fixedSize: mode !== 'expanded',
   })
 }
 
@@ -438,22 +500,28 @@ function getAnchoredBounds(size) {
   }
 }
 
-function setExpanded(nextExpanded) {
-  if (!widgetWindow || widgetWindow.isDestroyed()) return false
-  const next = Boolean(nextExpanded)
-  if (next === expanded) return expanded
+function setWidgetViewMode(nextMode) {
+  if (!WIDGET_VIEW_MODES.has(nextMode)) return widgetViewMode
+  if (!widgetWindow || widgetWindow.isDestroyed()) return widgetViewMode
+  if (nextMode === widgetViewMode) return widgetViewMode
   rememberCurrentWidgetBounds()
-  expanded = next
-  const size = expanded ? EXPANDED_SIZE : COLLAPSED_SIZE
-  const storedBounds = getStoredWidgetBounds(expanded ? 'expanded' : 'collapsed')
+  widgetViewMode = nextMode
+  const size = getWidgetModeSize(widgetViewMode)
+  const storedBounds = getStoredWidgetBounds(widgetViewMode)
+  const expanded = widgetViewMode === 'expanded'
   widgetWindow.setMinimumSize(
-    expanded ? EXPANDED_MIN_SIZE.width : COLLAPSED_SIZE.width,
-    expanded ? EXPANDED_MIN_SIZE.height : COLLAPSED_SIZE.height,
+    expanded ? EXPANDED_MIN_SIZE.width : size.width,
+    expanded ? EXPANDED_MIN_SIZE.height : size.height,
   )
   widgetWindow.setResizable(expanded)
   widgetWindow.setBounds(storedBounds ?? getAnchoredBounds(size), true)
   widgetWindow.webContents.send('widget:state-changed', expanded)
-  return expanded
+  widgetWindow.webContents.send('widget:view-mode-changed', widgetViewMode)
+  return widgetViewMode
+}
+
+function setExpanded(nextExpanded) {
+  return setWidgetViewMode(nextExpanded ? 'expanded' : 'collapsed') === 'expanded'
 }
 
 function revealPrimaryWindow() {
@@ -692,12 +760,24 @@ function isWidgetSender(event) {
 function registerIpc() {
   ipcMain.handle('widget:get-state', (event) => {
     if (!isWidgetSender(event)) return false
-    return expanded
+    return widgetViewMode === 'expanded'
   })
 
   ipcMain.handle('widget:set-expanded', (event, value) => {
     if (!isWidgetSender(event) || typeof value !== 'boolean') return false
     return setExpanded(value)
+  })
+
+  ipcMain.handle('widget:get-view-mode', (event) => {
+    if (!isWidgetSender(event)) return 'collapsed'
+    return widgetViewMode
+  })
+
+  ipcMain.handle('widget:set-view-mode', (event, value) => {
+    if (!isWidgetSender(event) || !WIDGET_VIEW_MODES.has(value)) {
+      return widgetViewMode
+    }
+    return setWidgetViewMode(value)
   })
 
   ipcMain.handle('widget:close', (event) => {
@@ -756,6 +836,44 @@ function registerIpc() {
     }
     lastWindowsActionAt = now
     return windowsControl.runAction('windows', action)
+  })
+
+  ipcMain.handle('windows:set-pointer-enabled', (event, enabled) => {
+    if (!isWidgetSender(event) || typeof enabled !== 'boolean') {
+      return {
+        enabled: false,
+        message: '无法从当前窗口更改空中鼠标状态',
+      }
+    }
+    return windowsControl.setPointerEnabled(enabled)
+  })
+
+  ipcMain.on('windows:pointer-command', (event, value) => {
+    if (!isWidgetSender(event)) return
+    const command = mapPointerCommandToCurrentDisplay(value)
+    if (!command) return
+    windowsControl.sendPointerCommand(command)
+  })
+
+  ipcMain.handle('voice:get-status', (event) => {
+    if (!isWidgetSender(event)) {
+      return {
+        enabled: false,
+        supported: false,
+        phase: 'error',
+        culture: '',
+        recognizer: '',
+        message: '无法从当前窗口读取语音命令状态',
+      }
+    }
+    return voiceControl.getStatus()
+  })
+
+  ipcMain.handle('voice:set-enabled', (event, enabled) => {
+    if (!isWidgetSender(event) || typeof enabled !== 'boolean') {
+      return voiceControl.getStatus()
+    }
+    return voiceControl.setEnabled(enabled)
   })
 
   ipcMain.handle('updates:get-status', (event) => {
@@ -1238,6 +1356,31 @@ function createWidgetWindow() {
                 }
               })()
             `)
+            const minimalMode = await widgetWindow.webContents.executeJavaScript(
+              "window.widgetControls.setViewMode('minimal')",
+            )
+            await new Promise((resolve) => setTimeout(resolve, 150))
+            const minimalBounds = widgetWindow.getBounds()
+            const minimalLayout = await widgetWindow.webContents.executeJavaScript(`
+              (() => {
+                const root = document.querySelector('.widget-root')
+                const restore = document.querySelector('.floating-button')
+                const restoreRect = restore?.getBoundingClientRect()
+                return {
+                  minimal: root?.classList.contains('is-minimal') === true,
+                  restoreVisible: Boolean(
+                    restoreRect && restoreRect.width >= 60 && restoreRect.height >= 60
+                  ),
+                }
+              })()
+            `)
+            await widgetWindow.webContents.executeJavaScript(
+              'window.widgetControls.setExpanded(true)',
+            )
+            await new Promise((resolve) => setTimeout(resolve, 150))
+            const restoredExpanded = await widgetWindow.webContents.executeJavaScript(
+              "document.querySelector('.widget-root')?.classList.contains('is-expanded') === true",
+            )
             const taskPickerVisible = await taskWindow.webContents.executeJavaScript(`
               Boolean(document.querySelector('.task-window-root .task-picker'))
             `)
@@ -1256,16 +1399,27 @@ function createWidgetWindow() {
             )
             const widgetBounds = widgetWindow.getBounds()
             const taskBounds = taskWindow.getBounds()
+            const widgetWorkArea = screen.getDisplayMatching(widgetBounds).workArea
+            const expectedExpandedSize = {
+              width: Math.min(EXPANDED_SIZE.width, widgetWorkArea.width),
+              height: Math.min(EXPANDED_SIZE.height, widgetWorkArea.height),
+            }
             const passed =
               widgetWindow.isAlwaysOnTop() &&
-              Math.abs(widgetBounds.width - EXPANDED_SIZE.width) <= 2 &&
-              Math.abs(widgetBounds.height - EXPANDED_SIZE.height) <= 2 &&
+              Math.abs(widgetBounds.width - expectedExpandedSize.width) <= 2 &&
+              Math.abs(widgetBounds.height - expectedExpandedSize.height) <= 2 &&
               taskWindow !== widgetWindow &&
               taskWindow.webContents.getURL().includes('view=tasks') &&
               taskPickerVisible &&
               layout.expanded &&
               layout.cameraVisible &&
               layout.gestureCount === 6 &&
+              minimalMode === 'minimal' &&
+              Math.abs(minimalBounds.width - MINIMAL_SIZE.width) <= 2 &&
+              Math.abs(minimalBounds.height - MINIMAL_SIZE.height) <= 2 &&
+              minimalLayout.minimal &&
+              minimalLayout.restoreVisible &&
+              restoredExpanded &&
               safety.paused &&
               safety.actionBlocked &&
               safety.windowsActionBlocked &&
@@ -1278,11 +1432,17 @@ function createWidgetWindow() {
                 stage: 'task-window-ready',
                 alwaysOnTop: widgetWindow.isAlwaysOnTop(),
                 widgetBounds,
+                widgetWorkArea,
+                expectedExpandedSize,
                 taskBounds,
                 widgetUrl: widgetWindow.webContents.getURL(),
                 taskUrl: taskWindow.webContents.getURL(),
                 ...layout,
                 ...safety,
+                minimalMode,
+                minimalBounds,
+                ...minimalLayout,
+                restoredExpanded,
                 taskPickerVisible,
                 dashboardScreenshot,
                 taskPickerScreenshot,
@@ -1306,6 +1466,7 @@ function createWidgetWindow() {
   }
 
   widgetWindow.on('closed', () => {
+    voiceControl.setEnabled(false)
     closeTaskPickerWindow()
     widgetWindow = null
   })
@@ -1337,6 +1498,7 @@ if (!hasSingleInstanceLock) {
   app.on('before-quit', () => {
     isQuitting = true
     desktopAutoUpdater.close()
+    voiceControl.close()
     codexAdapter.close()
   })
 }

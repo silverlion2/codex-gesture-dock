@@ -9,7 +9,8 @@
 | 姿态计算与阈值 | 特征、评分和状态转换稳定 | Unit | 是 |
 | 姿态视频循环 | 暂时无可用帧后自动恢复，推理不超过 10 FPS | Hook unit | 是 |
 | 媒体设备与偏好 | 精确摄像头约束、设备切换、镜像与填充偏好持久化且无效数据安全回退 | Unit + Hook + Component | 是 |
-| 麦克风输入 | 默认关闭；明确开启后使用指定设备并显示本机电平；关闭/拒绝/断开会停止轨道并显示状态 | Hook + Component + Manual hardware QA | 是 / 实机复核 |
+| 麦克风输入 | 默认关闭；明确开启后使用指定设备并显示本机电平；电平量化去重且最多约每 160 ms 更新；最小占屏/页面隐藏时取消动画帧、停止轨道并关闭 AudioContext，恢复后保持关闭；关闭/拒绝/断开会停止轨道并显示状态 | Hook + Component + Manual hardware QA | 是 / 实机复核 |
+| 本机语音命令 | 每次启动默认关闭；只有可信主窗口可启停；helper 只加载文化匹配的唤醒词固定 Grammar，只输出白名单动作/固定短语/相对置信度；非法 JSON、未知动作、自由文本、超长值、低置信度和重复过快命令失败关闭；10 秒启动超时；关闭、异常与退出结束进程且不无限重启；无识别器/默认麦克风显示可恢复状态；语音不能处理审批或绕过 Windows 急停 | Unit + Electron integration + Component + Windows manual | 是 / 发布前用简中与英文语言包、噪声、断开麦克风和最小占屏实机复核 |
 | 悬浮控制条 | 摄像头待命时可见；运行时在 hover/focus/menu-open 状态出现，键盘仍可到达 | Browser + axe | 是 |
 | 视觉工具切换 | 姿态、扫码、文档、文字、名片、隐私、背景、物体、对比按钮具有可读名称与明确选中状态 | Component | 是 |
 | 智能文档扫描 | 未就绪时拒绝摄像头捕获但允许照片/PDF 导入；角点排序、尺寸限制、35 MB 边界、处理状态和错误回退正确；原图质量分析区分清晰、暗、亮、低对比、模糊、局部反光和低分辨率，警告可见但不禁用 OCR/导出 | Unit + Component + Browser/manual | 是 / 发布前真实拍摄复核 |
@@ -51,6 +52,9 @@
 | QR/条码图片 | 未启动摄像头仍可导入 PNG/JPEG/WebP/BMP；单张 35 MB、批量 2–20 张/合计 200 MB 限制；串行顺序、进度、取消、单文件失败隔离、对象 URL 释放、安全 CSV、复制与继续扫描正确；不自动打开 URL | Unit + Component + Browser/manual | 是 / 官方 ZXing 黑盒图复核 |
 | QR 生成 | 文字/HTTP(S)/Wi-Fi/vCard payload、协议分隔符和换行转义、2500 字节和 256–1024px 边界、真实 ZXing SVG writer、扫描/生成切换、字段变化使预览失效、SVG/PNG/剪贴板显式输出且不自动导航 | Unit + Component + Manual cross-device | 是 / 实机试扫仍需发布前人工执行 |
 | 手势保持/释放 | 0.85 秒后触发，回中前不重复 | Unit | 是 |
+| 空中鼠标手势 | 食指坐标镜像、平滑与边界正确；首帧捏合与不足 250 ms 的指向不能单击，稳定未捏合指向后捏合只产生一次单击并需松开复位；丢手/隐藏页清除武装和平滑状态；审批待处理时指针资格为 false；张掌垂直位移按冷却产生固定方向滚动 | Unit + Component + Windows manual | 是 / 发布前实机复核多光线和左右手 |
+| 空中鼠标 IPC/helper | 仅可信主窗口可启用并发送 move/click/scroll；非法类型、非有限坐标、越界整数和过快事件失败关闭；helper 由绝对 System32 PowerShell 路径按需单实例启动，停用/急停/退出时结束，异常退出/同步启动失败进入 3 秒退避，不接受任意文本或脚本 | Unit + Electron integration + Windows manual | 是 / 发布前实机复核急停与 helper 故障 |
+| 自动资源节流 | 正常姿态不超过 10 FPS；空中鼠标/最小占屏约 4–5 FPS且姿态 UI 最多约 2 FPS，并优先约束摄像头到 640 × 360、15–20 FPS；隐藏覆盖层不绘制；最小占屏停止扫码/面具并释放电平表音频轨道；页面不可见时暂停视觉推理并释放电平表音频；指针坐标不造成逐帧 React render；Electron smoke 记录启动耗时、进程数、working set 与 private bytes，折叠主窗门禁 5 秒/6 进程/256 MB private，展开+任务流程门禁 10 秒/8 进程/384 MB private；working set 仅作共享页趋势观测 | Hook unit + Build artifact + Electron metrics + manual profiler | 是 / 发布前用任务管理器与 React Profiler 复核 |
 | Codex/Windows 动作白名单 | 任意未知输入在启动 helper 前被拒绝 | Unit | 是 |
 | 紧急停止 | 两层桌面动作都失败关闭 | Unit + packaged smoke | 是 |
 | Codex App Server 生命周期 | 连接、通知、审批、关闭竞态正确 | Unit | 是 |
@@ -61,16 +65,18 @@
 | Renderer 恢复限流 | 一分钟最多自动恢复两次 | Unit | 是 |
 | 主面板无障碍 | 展开布局 0 axe violation | Chromium E2E | 是 |
 | 文件/任务/动作/确认 | 每一层 0 axe violation，Escape 正确返回 | Chromium E2E | 是 |
-| 打包主窗口 | app 协议加载、置顶、`348 × 360` 迷你摄像头尺寸及 `1120 × 760` 展开尺寸正确 | Packaged smoke | 是 |
-| 窗口边界恢复 | 迷你与展开边界分别保存，展开不小于 `980 × 760`，断开显示器后回到可见工作区 | Unit + Packaged manual | 是 / 实机复核 |
+| 打包主窗口 | app 协议加载、置顶、`348 × 360` 迷你摄像头尺寸及 `1120 × 760` 展开尺寸正确；自动 smoke 在无可用 GPU/远程会话中禁用硬件加速，正常运行不改变 GPU 策略 | Packaged smoke | 是 |
+| 最小占屏模式 | 主面板与视频工具退出可见/键盘/辅助技术导航，只留下有明确名称的 `78 × 78` 恢复气泡；摄像头视频元素、姿态和手势状态保持挂载，恢复后回到迷你 Dock；不申请屏幕捕获权限 | Unit + Chromium a11y + Electron smoke + Packaged manual | 是 / 自动验证窗口尺寸与恢复，发布前在真实屏幕共享中复核连续性 |
+| 窗口边界恢复 | 最小占屏、迷你与展开边界分别保存，固定尺寸为 `78 × 78` / `348 × 360`，展开不小于 `980 × 760`，断开显示器后回到可见工作区 | Unit + Packaged manual | 是 / 实机复核 |
 | 打包任务窗口 | 摄像头区域可见、六手势可见、独立窗口、安全开关有效 | Packaged smoke | 是 |
 | 安装与卸载 | 版本、注册表、主程序、卸载器与清理正确 | Windows CI | 是 |
 | N→N+1 升级 | 旧签名安装版可升级到新签名安装版 | Release verification | 需要真实发布 |
 | 签名自动更新 | `latest.yml` 与签名安装器大小/SHA-512 一致 | Release verification | 需要真实发布 |
 | 摄像头实机 | 权限、真实画面、断开重连、设备占用错误 | Manual hardware QA | 发布前人工执行 |
-| 表情动态面具 | blendshape 映射与异常分数限制；三种样式选择；紧凑模式启动；模式切换与无障碍名称；真实摄像头下的对齐、眨眼、抬眉、微笑、张嘴、失去人脸与镜像/取景 | Unit + Component + Browser/manual | 是 / 发布前真实摄像头复核 |
+| 表情动态面具 | blendshape 映射与异常分数限制；三种样式选择；可见紧凑/展开模式以约 15 FPS 上限启动；最小占屏、隐藏页和模式切换停止不可见推理；无障碍名称；真实摄像头下的对齐、眨眼、抬眉、微笑、张嘴、失去人脸与镜像/取景 | Unit + Component + Browser/manual | 是 / 发布前真实摄像头复核 |
 
 | MediaPipe 懒加载 | 源码仅含 type import 和统一动态导入；姿态/手势/面具/人脸/背景/物体首次加载行为不回归；生产构建生成独立 `vision_bundle` chunk，主 renderer 不再静态包含 MediaPipe，动态加载失败可重试 | Unit + Build artifact review | 是 |
+| 工具面板分包 | 实时监测壳层保持启动必需；OCR、文档、隐私、面具设置、背景、物体、比较与颜色面板生成独立按需 chunk，切换模式后 loading/成功状态正常 | Component + Build artifact review | 是 |
 
 ## 固定命令
 

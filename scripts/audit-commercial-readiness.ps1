@@ -21,8 +21,12 @@ function Add-Blocker {
 
 function Invoke-GhJson {
   param([string[]]$Arguments)
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "SilentlyContinue"
   $raw = & gh @Arguments 2>$null
-  if ($LASTEXITCODE -ne 0) {
+  $exitCode = $LASTEXITCODE
+  $ErrorActionPreference = $previousErrorActionPreference
+  if ($exitCode -ne 0) {
     return $null
   }
   $text = $raw | Out-String
@@ -30,6 +34,19 @@ function Invoke-GhJson {
     return @()
   }
   return $text | ConvertFrom-Json
+}
+
+function Invoke-GitText {
+  param([string[]]$Arguments)
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "SilentlyContinue"
+  $raw = & git -C $projectRoot @Arguments 2>$null
+  $exitCode = $LASTEXITCODE
+  $ErrorActionPreference = $previousErrorActionPreference
+  if ($exitCode -ne 0) {
+    return ""
+  }
+  return ($raw | Out-String).Trim()
 }
 
 function As-Items {
@@ -91,9 +108,9 @@ function Test-RulesetProtectsRef {
   return $included -and -not $excluded
 }
 
-$branch = (& git -C $projectRoot branch --show-current).Trim()
-$head = (& git -C $projectRoot rev-parse HEAD).Trim()
-$remoteLine = (& git -C $projectRoot ls-remote origin refs/heads/main).Trim()
+$branch = Invoke-GitText @("branch", "--show-current")
+$head = Invoke-GitText @("rev-parse", "HEAD")
+$remoteLine = Invoke-GitText @("ls-remote", "origin", "refs/heads/main")
 $remoteMain = if ($remoteLine) { ($remoteLine -split "\s+")[0] } else { "" }
 $worktreeChanges = @(& git -C $projectRoot status --porcelain=v1)
 $worktreeClean = $worktreeChanges.Count -eq 0
@@ -102,6 +119,9 @@ if (-not $worktreeClean) {
 }
 if ($branch -ne "main") {
   Add-Blocker "wrong-branch" "The release candidate is not on main."
+}
+if (-not $remoteMain) {
+  Add-Blocker "origin-main-unavailable" "origin/main could not be resolved; check network access and the configured remote."
 }
 if (-not $remoteMain -or $head -ne $remoteMain -or -not $worktreeClean) {
   Add-Blocker "candidate-not-pushed" "The exact candidate source is not present on origin/main."
@@ -194,7 +214,18 @@ $signatureResults = foreach ($name in $artifactNames) {
     [ordered]@{ name = $name; status = "Missing"; signer = ""; timestampSigner = "" }
     continue
   }
-  $signature = Get-AuthenticodeSignature -LiteralPath $path
+  try {
+    $signature = Get-AuthenticodeSignature -LiteralPath $path -ErrorAction Stop
+  } catch {
+    [ordered]@{
+      name = $name
+      status = "Unavailable"
+      signer = ""
+      timestampSigner = ""
+      error = $_.Exception.Message
+    }
+    continue
+  }
   [ordered]@{
     name = $name
     status = [string]$signature.Status

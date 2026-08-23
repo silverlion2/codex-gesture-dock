@@ -76,6 +76,7 @@ export interface WindowsControlStatus {
   actionPolicy: 'allowlist'
   auditEnabled: boolean
   monitor: WindowsMonitorStatus
+  pointerEnabled?: boolean
 }
 
 export interface WindowsControlEvent {

@@ -1,20 +1,36 @@
-import { Bell, Coffee, Hand } from 'lucide-react'
+import { Bell, Coffee, Hand, Mic2 } from 'lucide-react'
 import type { ReminderSettings } from '../hooks/usePoseMonitor'
 import type { GestureMode } from '../lib/gestures'
+import {
+  EN_VOICE_COMMANDS,
+  ZH_VOICE_COMMANDS,
+  voiceControlSummary,
+  type VoiceControlStatus,
+} from '../lib/voiceControl'
 
 interface WidgetSettingsProps {
   settings: ReminderSettings
   gestureMode: GestureMode
+  voiceStatus: VoiceControlStatus
   onChange: (settings: ReminderSettings) => void
   onGestureModeChange: (mode: GestureMode) => void
+  onVoiceEnabledChange: (enabled: boolean) => void
 }
 
 export function WidgetSettings({
   settings,
   gestureMode,
+  voiceStatus,
   onChange,
   onGestureModeChange,
+  onVoiceEnabledChange,
 }: WidgetSettingsProps) {
+  const gestureModeLabel =
+    gestureMode === 'windows'
+      ? 'Windows 手势'
+      : gestureMode === 'pointer'
+        ? '空中鼠标'
+        : 'Codex 手势'
   return (
     <section className="widget-settings" aria-label="提醒设置">
       <div className="widget-setting-row">
@@ -87,13 +103,13 @@ export function WidgetSettings({
 
       <div className="widget-setting-row">
         <Hand size={18} aria-hidden="true" />
-        <span>{gestureMode === 'windows' ? 'Windows 手势' : 'Codex 手势'}</span>
+        <span>{gestureModeLabel}</span>
         <button
           className={`mini-toggle ${settings.gestureEnabled ? 'is-on' : ''}`}
           type="button"
           role="switch"
           aria-checked={settings.gestureEnabled}
-          aria-label={`${gestureMode === 'windows' ? 'Windows' : 'Codex'} 手势控制`}
+          aria-label={`${gestureModeLabel}控制`}
           onClick={() =>
             onChange({ ...settings, gestureEnabled: !settings.gestureEnabled })
           }
@@ -111,9 +127,54 @@ export function WidgetSettings({
           >
             <option value="codex">Codex</option>
             <option value="windows">Windows</option>
+            <option value="pointer">空中鼠标</option>
           </select>
         </label>
       </div>
+
+      <div className="widget-setting-row voice-command-setting">
+        <Mic2 size={18} aria-hidden="true" />
+        <span>本机语音</span>
+        <button
+          className={`mini-toggle ${voiceStatus.enabled ? 'is-on' : ''}`}
+          type="button"
+          role="switch"
+          aria-checked={voiceStatus.enabled}
+          aria-label="本机语音命令"
+          disabled={voiceStatus.phase === 'starting'}
+          onClick={() => onVoiceEnabledChange(!voiceStatus.enabled)}
+        >
+          <i />
+        </button>
+        <small
+          className={`voice-command-status is-${voiceStatus.phase}`}
+          role={
+            voiceStatus.phase === 'error' || voiceStatus.phase === 'unavailable'
+              ? 'alert'
+              : 'status'
+          }
+          title={voiceStatus.message}
+        >
+          {voiceControlSummary(voiceStatus)}
+        </small>
+      </div>
+      <details className="voice-command-guide">
+        <summary>查看固定语音口令（19）</summary>
+        <div>
+          <strong>中文（简体）</strong>
+          <ul>
+            {ZH_VOICE_COMMANDS.map((command) => (
+              <li key={command}>{command}</li>
+            ))}
+          </ul>
+          <strong>English</strong>
+          <ul lang="en">
+            {EN_VOICE_COMMANDS.map((command) => (
+              <li key={command}>{command}</li>
+            ))}
+          </ul>
+        </div>
+      </details>
     </section>
   )
 }

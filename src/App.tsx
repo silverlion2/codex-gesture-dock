@@ -5,6 +5,7 @@ import {
   ListTodo,
   Maximize2,
   Mic,
+  Minimize2,
   PauseCircle,
   PlayCircle,
   Settings,
@@ -17,16 +18,12 @@ import { CodexIntegrationPanel } from './components/CodexIntegrationPanel'
 import { CompactCamera } from './components/CompactCamera'
 import { CameraModeSwitcher } from './components/CameraModeSwitcher'
 import { GestureBook } from './components/GestureBook'
-import { FacePrivacyPanel } from './components/FacePrivacyPanel'
-import { FaceMaskPanel } from './components/FaceMaskPanel'
-import { BackgroundToolPanel } from './components/BackgroundToolPanel'
-import { ObjectDetectionPanel } from './components/ObjectDetectionPanel'
+import { FloatingButton } from './components/FloatingButton'
 import {
   CompactMediaControls,
   MediaInputPanel,
 } from './components/MediaInputControls'
 import { MiniCameraControls } from './components/MiniCameraControls'
-import { OcrToolPanel } from './components/OcrToolPanel'
 import { TaskPicker, type TaskPickerHandle } from './components/TaskPicker'
 import { WidgetMetrics } from './components/WidgetMetrics'
 import { WidgetSettings } from './components/WidgetSettings'
@@ -54,8 +51,18 @@ import type {
 } from './lib/codexApprovals'
 import type { CodexIntegrationStatus } from './lib/codexIntegration'
 import type { AppUpdateStatus } from './lib/appUpdate'
+import type { WidgetViewMode } from './electron'
 import type { CameraMode } from './lib/cameraTools'
 import type { FaceMaskStyle } from './lib/faceMasks'
+import {
+  shouldEnableAirPointer,
+  type PointerCommand,
+} from './lib/pointerGestures'
+import {
+  initialVoiceControlStatus,
+  type VoiceCommandEvent,
+  type VoiceControlStatus,
+} from './lib/voiceControl'
 import {
   loadMediaPreferences,
   saveMediaPreferences,
@@ -63,8 +70,47 @@ import {
 } from './lib/mediaPreferences'
 
 const CameraToolPanel = lazy(() => import('./components/CameraToolPanel'))
-const ImageComparisonPanel = lazy(() => import('./components/ImageComparisonPanel').then((module) => ({ default: module.ImageComparisonPanel })))
-const ColorAnalysisPanel = lazy(() => import('./components/ColorAnalysisPanel').then((module) => ({ default: module.ColorAnalysisPanel })))
+const FacePrivacyPanel = lazy(() =>
+  import('./components/FacePrivacyPanel').then((module) => ({
+    default: module.FacePrivacyPanel,
+  })),
+)
+const FaceMaskPanel = lazy(() =>
+  import('./components/FaceMaskPanel').then((module) => ({
+    default: module.FaceMaskPanel,
+  })),
+)
+const BackgroundToolPanel = lazy(() =>
+  import('./components/BackgroundToolPanel').then((module) => ({
+    default: module.BackgroundToolPanel,
+  })),
+)
+const ObjectDetectionPanel = lazy(() =>
+  import('./components/ObjectDetectionPanel').then((module) => ({
+    default: module.ObjectDetectionPanel,
+  })),
+)
+const OcrToolPanel = lazy(() =>
+  import('./components/OcrToolPanel').then((module) => ({
+    default: module.OcrToolPanel,
+  })),
+)
+const ImageComparisonPanel = lazy(() =>
+  import('./components/ImageComparisonPanel').then((module) => ({
+    default: module.ImageComparisonPanel,
+  })),
+)
+const ColorAnalysisPanel = lazy(() =>
+  import('./components/ColorAnalysisPanel').then((module) => ({
+    default: module.ColorAnalysisPanel,
+  })),
+)
+
+const toolLoadingFallback = (
+  <div className="tool-empty-state" role="status">
+    正在加载本机工具
+  </div>
+)
 
 const initialSettings: ReminderSettings = {
   postureEnabled: true,
@@ -78,16 +124,19 @@ const GESTURE_MODE_STORAGE_KEY = 'codex-gesture-dock.gesture-mode.v1'
 
 function initialGestureMode(): GestureMode {
   try {
-    return window.localStorage.getItem(GESTURE_MODE_STORAGE_KEY) === 'windows'
-      ? 'windows'
-      : 'codex'
+    const stored = window.localStorage.getItem(GESTURE_MODE_STORAGE_KEY)
+    return stored === 'windows' || stored === 'pointer' ? stored : 'codex'
   } catch {
     return 'codex'
   }
 }
 
-function initialExpandedState() {
-  return new URLSearchParams(window.location.search).get('widget') !== 'collapsed'
+function initialWidgetViewMode(): WidgetViewMode {
+  const requestedMode = new URLSearchParams(window.location.search).get('widget')
+  if (requestedMode === 'minimal' || requestedMode === 'collapsed') {
+    return requestedMode
+  }
+  return 'expanded'
 }
 
 function initialApprovalQueue(): CodexApprovalRequest[] {
@@ -119,7 +168,7 @@ function WidgetApp() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const toastTimerRef = useRef<number | null>(null)
   const microphoneTimerRef = useRef<number | null>(null)
-  const [expanded, setExpanded] = useState(initialExpandedState)
+  const [viewMode, setViewMode] = useState(initialWidgetViewMode)
   const [settings, setSettings] = useState(initialSettings)
   const [cameraMode, setCameraMode] = useState<CameraMode>('monitor')
   const [faceMaskStyle, setFaceMaskStyle] = useState<FaceMaskStyle>('fox')
@@ -136,12 +185,26 @@ function WidgetApp() {
   const [windowsControlBusy, setWindowsControlBusy] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<AppUpdateStatus | null>(null)
+  const [voiceStatus, setVoiceStatus] = useState<VoiceControlStatus>(
+    initialVoiceControlStatus,
+  )
   const currentApproval = approvalQueue[0] ?? null
+  const expanded = viewMode === 'expanded'
+  const screenUsageMinimized = viewMode === 'minimal'
 
   const showReminder = useCallback((message: string) => {
     setToast(message)
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current)
     toastTimerRef.current = window.setTimeout(() => setToast(''), 5_000)
+  }, [])
+
+  const changeViewMode = useCallback((nextMode: WidgetViewMode) => {
+    setViewMode(nextMode)
+    if (nextMode !== 'expanded') {
+      setTaskPickerOpen(false)
+      void window.widgetControls?.closeTaskPicker().catch(() => {})
+    }
+    void window.widgetControls?.setViewMode(nextMode).catch(() => {})
   }, [])
 
   const { videoInputs, audioInputs, refreshDevices } = useMediaDevices()
@@ -153,6 +216,7 @@ function WidgetApp() {
     stop: stopAudioInput,
   } = useAudioInput({
     deviceId: mediaPreferences.audioDeviceId,
+    meterActive: !screenUsageMinimized,
     onActivated: refreshDevices,
   })
 
@@ -212,10 +276,20 @@ function WidgetApp() {
     settings,
     videoDeviceId: mediaPreferences.videoDeviceId,
     onReminder: showReminder,
+    renderOverlay: !screenUsageMinimized,
+    resourceSaving: screenUsageMinimized || gestureMode === 'pointer',
   })
+  const {
+    phase: monitorPhase,
+    startSession: startMonitorSession,
+    stopSession: stopMonitorSession,
+  } = monitor
 
   const codeScanner = useCodeScanner({
-    active: cameraMode === 'codes' && monitor.phase === 'monitoring',
+    active:
+      !screenUsageMinimized &&
+      cameraMode === 'codes' &&
+      monitor.phase === 'monitoring',
     videoRef,
   })
 
@@ -286,11 +360,10 @@ function WidgetApp() {
   )
 
   const openTaskPicker = useCallback(() => {
-    setExpanded(true)
+    changeViewMode('expanded')
     setTaskPickerOpen(true)
     const controls = window.widgetControls
     if (controls) {
-      void controls.setExpanded(true).catch(() => {})
       void controls.openTaskPicker().catch((caught) =>
         showReminder(
           caught instanceof Error ? caught.message : '任务选择窗口无法打开',
@@ -300,7 +373,95 @@ function WidgetApp() {
     }
 
     window.open(`${window.location.pathname}?view=tasks&mockTasks=1`, 'codex-tasks')
-  }, [showReminder])
+  }, [changeViewMode, showReminder])
+
+  const setVoiceControlEnabled = useCallback(
+    async (enabled: boolean) => {
+      const controls = window.widgetControls
+      if (!controls) {
+        const status: VoiceControlStatus = {
+          ...initialVoiceControlStatus,
+          supported: false,
+          phase: 'unavailable',
+          message: '本机语音命令仅在 Windows 桌面版中可用',
+        }
+        setVoiceStatus(status)
+        showReminder(status.message)
+        return
+      }
+      try {
+        const status = await controls.setVoiceControlEnabled(enabled)
+        setVoiceStatus(status)
+        showReminder(status.message)
+      } catch (caught) {
+        const message =
+          caught instanceof Error ? caught.message : '本机语音命令切换失败'
+        setVoiceStatus((current) => ({
+          ...current,
+          enabled: false,
+          phase: 'error',
+          message,
+        }))
+        showReminder(message)
+      }
+    },
+    [showReminder],
+  )
+
+  const handleVoiceCommand = useCallback(
+    (command: VoiceCommandEvent) => {
+      if (command.action === 'open_task_picker') {
+        openTaskPicker()
+        showReminder('语音命令：已打开任务选择器')
+        return
+      }
+      if (command.action === 'start_monitoring') {
+        if (['loading', 'calibrating', 'monitoring'].includes(monitorPhase)) {
+          showReminder('姿态监测已在运行')
+          return
+        }
+        changeViewMode('expanded')
+        showReminder('语音命令：正在启动姿态监测')
+        void startMonitorSession()
+        return
+      }
+      if (command.action === 'stop_monitoring') {
+        if (!['loading', 'calibrating', 'monitoring'].includes(monitorPhase)) {
+          showReminder('姿态监测尚未运行')
+          return
+        }
+        stopMonitorSession()
+        showReminder('语音命令：已停止姿态监测')
+        return
+      }
+      if (command.action === 'minimize_window') {
+        setSettingsOpen(false)
+        changeViewMode('minimal')
+        showReminder('语音命令：已切换为极简模式')
+        return
+      }
+      if (command.action === 'restore_window') {
+        changeViewMode('collapsed')
+        showReminder('语音命令：已恢复小窗')
+        return
+      }
+      if (command.action === 'disable_voice_commands') {
+        void setVoiceControlEnabled(false)
+        return
+      }
+      void runGestureAction(command.action)
+    },
+    [
+      changeViewMode,
+      monitorPhase,
+      openTaskPicker,
+      runGestureAction,
+      setVoiceControlEnabled,
+      showReminder,
+      startMonitorSession,
+      stopMonitorSession,
+    ],
+  )
 
   const respondCodexApproval = useCallback(
     async (decision: CodexApprovalDecision) => {
@@ -362,14 +523,47 @@ function WidgetApp() {
   )
 
   const gestureBindings = getGestureBindings(gestureMode)
+  const sendPointerCommand = useCallback((command: PointerCommand) => {
+    window.widgetControls?.sendPointerCommand(command)
+  }, [])
+  const airPointerEnabled = shouldEnableAirPointer({
+    approvalPending: Boolean(currentApproval),
+    cameraMode,
+    gestureEnabled: settings.gestureEnabled,
+    gestureMode,
+    monitoring: monitor.phase === 'monitoring',
+  })
   const gesture = useGestureControl({
     active: cameraMode === 'monitor' && monitor.phase === 'monitoring',
     bindings: gestureBindings,
     enabled: settings.gestureEnabled,
     onAction: runGestureAction,
     onGesture: handleGesture,
+    onPointerCommand: sendPointerCommand,
+    pointerMode: airPointerEnabled,
     videoRef,
   })
+
+  const pointerControlRequested = airPointerEnabled
+
+  useEffect(() => {
+    const controls = window.widgetControls
+    if (!controls) return
+    let disposed = false
+    void controls.setPointerControlEnabled(pointerControlRequested).catch((caught) => {
+      if (!disposed && pointerControlRequested) {
+        showReminder(
+          caught instanceof Error ? caught.message : '空中鼠标控制桥暂时不可用',
+        )
+      }
+    })
+    return () => {
+      disposed = true
+      if (pointerControlRequested) {
+        void controls.setPointerControlEnabled(false).catch(() => {})
+      }
+    }
+  }, [pointerControlRequested, showReminder])
 
   useEffect(() => {
     try {
@@ -434,17 +628,18 @@ function WidgetApp() {
       )
       setTaskPickerOpen(false)
       void controls.closeTaskPicker().catch(() => {})
-      setExpanded(true)
+      changeViewMode('expanded')
     }
 
-    void controls.getState().then(setExpanded).catch(() => {})
+    void controls.getViewMode().then(setViewMode).catch(() => {})
     void refreshIntegrationStatus()
     void controls.getUpdateStatus().then(setUpdateStatus).catch(() => {})
+    void controls.getVoiceControlStatus().then(setVoiceStatus).catch(() => {})
     void controls
       .getPendingCodexApprovals()
       .then((requests) => requests.forEach(enqueueApproval))
       .catch(() => {})
-    const removeStateListener = controls.onStateChange(setExpanded)
+    const removeViewModeListener = controls.onViewModeChange(setViewMode)
     const removeTaskPickerListener = controls.onTaskPickerStateChange(setTaskPickerOpen)
     const removeMessageListener = controls.onMessage(showReminder)
     const removeApprovalListener = controls.onCodexApprovalRequest(enqueueApproval)
@@ -460,6 +655,17 @@ function WidgetApp() {
     const removeWindowsListener = controls.onWindowsControlEvent(() => {
       void refreshIntegrationStatus()
     })
+    const removeVoiceCommandListener = controls.onVoiceCommand(handleVoiceCommand)
+    const removeVoiceStatusListener = controls.onVoiceControlStatus((status) => {
+      setVoiceStatus(status)
+      if (
+        status.phase === 'listening' ||
+        status.phase === 'unavailable' ||
+        status.phase === 'error'
+      ) {
+        showReminder(status.message)
+      }
+    })
     const removeUpdateListener = controls.onUpdateStatus((status) => {
       setUpdateStatus(status)
       if (status.phase === 'available' || status.phase === 'downloaded') {
@@ -471,7 +677,7 @@ function WidgetApp() {
       8_000,
     )
     return () => {
-      removeStateListener()
+      removeViewModeListener()
       removeTaskPickerListener()
       removeMessageListener()
       removeApprovalListener()
@@ -479,10 +685,12 @@ function WidgetApp() {
       removeRuntimeListener()
       removeIntegrationListener()
       removeWindowsListener()
+      removeVoiceCommandListener()
+      removeVoiceStatusListener()
       removeUpdateListener()
       window.clearInterval(integrationTimer)
     }
-  }, [refreshIntegrationStatus, showReminder])
+  }, [changeViewMode, handleVoiceCommand, refreshIntegrationStatus, showReminder])
 
   useEffect(
     () => () => {
@@ -495,13 +703,13 @@ function WidgetApp() {
   )
 
   const changeExpanded = useCallback((next: boolean) => {
-    setExpanded(next)
-    if (!next) {
-      setTaskPickerOpen(false)
-      void window.widgetControls?.closeTaskPicker().catch(() => {})
-    }
-    void window.widgetControls?.setExpanded(next).catch(() => {})
-  }, [])
+    changeViewMode(next ? 'expanded' : 'collapsed')
+  }, [changeViewMode])
+
+  const minimizeScreenUsage = useCallback(() => {
+    setSettingsOpen(false)
+    changeViewMode('minimal')
+  }, [changeViewMode])
 
   const closeWidget = useCallback(() => {
     if (window.widgetControls) void window.widgetControls.close().catch(() => {})
@@ -570,11 +778,21 @@ function WidgetApp() {
 
   return (
     <main
-      className={`widget-root ${expanded ? 'is-expanded' : 'is-collapsed'} ${sessionActive ? 'has-active-camera' : ''} ${audioPhase === 'active' ? 'has-active-audio' : ''}`}
+      className={`widget-root ${expanded ? 'is-expanded' : 'is-collapsed'} ${screenUsageMinimized ? 'is-minimal' : ''} ${sessionActive ? 'has-active-camera' : ''} ${audioPhase === 'active' ? 'has-active-audio' : ''}`}
     >
+      <FloatingButton
+        hidden={!screenUsageMinimized}
+        gestureActive={settings.gestureEnabled && gesture.modelPhase === 'ready'}
+        phase={monitor.phase}
+        score={monitor.score}
+        status={monitor.status}
+        onExpand={() => changeViewMode('collapsed')}
+      />
       <section
         className="floating-panel"
+        aria-hidden={screenUsageMinimized || undefined}
         aria-label={expanded ? 'Codex Gesture Dock 控制面板' : 'Codex Gesture Dock 迷你摄像头'}
+        inert={screenUsageMinimized}
       >
         <header className="widget-header">
           <div className="widget-brand">
@@ -652,6 +870,14 @@ function WidgetApp() {
             >
               <ChevronDown size={19} aria-hidden="true" />
             </button>
+            <button
+              type="button"
+              aria-label="最小化占屏，适合屏幕共享"
+              title="最小化占屏，适合屏幕共享"
+              onClick={minimizeScreenUsage}
+            >
+              <Minimize2 size={18} aria-hidden="true" />
+            </button>
             <button type="button" aria-label="退出 Codex Gesture Dock" onClick={closeWidget}>
               <X size={19} aria-hidden="true" />
             </button>
@@ -686,6 +912,7 @@ function WidgetApp() {
               framing={mediaPreferences.cameraFraming}
               scanPhase={codeScanner.phase}
               faceMaskStyle={faceMaskStyle}
+              visible={!screenUsageMinimized}
               onMirrorToggle={() =>
                 setMediaPreferences((current) => ({
                   ...current,
@@ -755,7 +982,7 @@ function WidgetApp() {
 
               </>
             ) : cameraMode === 'codes' || cameraMode === 'document' ? (
-              <Suspense fallback={<div className="tool-empty-state" role="status">正在加载本机扫描工具</div>}>
+              <Suspense fallback={toolLoadingFallback}>
                 <CameraToolPanel
                   mode={cameraMode}
                   videoRef={videoRef}
@@ -769,37 +996,47 @@ function WidgetApp() {
                 />
               </Suspense>
             ) : cameraMode === 'privacy' ? (
-              <FacePrivacyPanel onMessage={showReminder} />
+              <Suspense fallback={toolLoadingFallback}>
+                <FacePrivacyPanel onMessage={showReminder} />
+              </Suspense>
             ) : cameraMode === 'masks' ? (
-              <FaceMaskPanel
-                style={faceMaskStyle}
-                onStyleChange={setFaceMaskStyle}
-                sessionActive={['loading', 'calibrating', 'monitoring'].includes(monitor.phase)}
-                onStart={handlePrimaryAction}
-              />
+              <Suspense fallback={toolLoadingFallback}>
+                <FaceMaskPanel
+                  style={faceMaskStyle}
+                  onStyleChange={setFaceMaskStyle}
+                  sessionActive={['loading', 'calibrating', 'monitoring'].includes(monitor.phase)}
+                  onStart={handlePrimaryAction}
+                />
+              </Suspense>
             ) : cameraMode === 'background' ? (
-              <BackgroundToolPanel onMessage={showReminder} />
+              <Suspense fallback={toolLoadingFallback}>
+                <BackgroundToolPanel onMessage={showReminder} />
+              </Suspense>
             ) : cameraMode === 'objects' ? (
-              <ObjectDetectionPanel
-                videoRef={videoRef}
-                mirrored={mediaPreferences.cameraMirrored}
-                sessionReady={monitor.phase === 'monitoring'}
-                onMessage={showReminder}
-              />
+              <Suspense fallback={toolLoadingFallback}>
+                <ObjectDetectionPanel
+                  videoRef={videoRef}
+                  mirrored={mediaPreferences.cameraMirrored}
+                  sessionReady={monitor.phase === 'monitoring'}
+                  onMessage={showReminder}
+                />
+              </Suspense>
             ) : cameraMode === 'compare' ? (
-              <Suspense fallback={<div className="tool-empty-state" role="status">正在加载本机图片工具</div>}>
+              <Suspense fallback={toolLoadingFallback}>
                 <ImageComparisonPanel onMessage={showReminder} />
               </Suspense>
             ) : cameraMode === 'colors' ? (
-              <Suspense fallback={<div className="tool-empty-state" role="status">正在加载本机颜色分析工具</div>}>
+              <Suspense fallback={toolLoadingFallback}>
                 <ColorAnalysisPanel onMessage={showReminder} />
               </Suspense>
             ) : (
-              <OcrToolPanel
-                key={cameraMode}
-                mode={cameraMode}
-                onMessage={showReminder}
-              />
+              <Suspense fallback={toolLoadingFallback}>
+                <OcrToolPanel
+                  key={cameraMode}
+                  mode={cameraMode}
+                  onMessage={showReminder}
+                />
+              </Suspense>
             )}
           </section>
 
@@ -808,8 +1045,10 @@ function WidgetApp() {
               <WidgetSettings
                 settings={settings}
                 gestureMode={gestureMode}
+                voiceStatus={voiceStatus}
                 onChange={setSettings}
                 onGestureModeChange={setGestureMode}
+                onVoiceEnabledChange={setVoiceControlEnabled}
               />
             ) : cameraMode === 'monitor' ? (
               <section className={`posture-overview status-${monitor.status}`} aria-label="当前坐姿状态">

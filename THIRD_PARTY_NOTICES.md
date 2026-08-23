@@ -2,7 +2,7 @@
 
 Codex Gesture Dock includes the production dependencies and bundled assets below.
 This inventory is generated from the installed production dependency graph and
-verified asset hashes for version 0.5.0; CI rejects stale output.
+verified asset hashes for version 0.6.0; CI rejects stale output.
 
 | Component | Version | License |
 | --- | --- | --- |

@@ -28,11 +28,23 @@ import type {
   WindowsControlStatus,
 } from './lib/codexIntegration'
 import type { AppUpdateStatus } from './lib/appUpdate'
+import type {
+  PointerCommand,
+  PointerControlStatus,
+} from './lib/pointerGestures'
+import type {
+  VoiceCommandEvent,
+  VoiceControlStatus,
+} from './lib/voiceControl'
+
+export type WidgetViewMode = 'minimal' | 'collapsed' | 'expanded'
 
 export interface WidgetControls {
   isElectron: true
   getState: () => Promise<boolean>
   setExpanded: (expanded: boolean) => Promise<boolean>
+  getViewMode: () => Promise<WidgetViewMode>
+  setViewMode: (mode: WidgetViewMode) => Promise<WidgetViewMode>
   close: () => Promise<boolean>
   openTaskPicker: () => Promise<boolean>
   closeTaskPicker: () => Promise<boolean>
@@ -40,6 +52,10 @@ export interface WidgetControls {
   showMessage: (message: string) => Promise<boolean>
   runCodexAction: (action: CodexAction) => Promise<CodexActionResult>
   runWindowsAction: (action: WindowsAction) => Promise<WindowsActionResult>
+  setPointerControlEnabled: (enabled: boolean) => Promise<PointerControlStatus>
+  sendPointerCommand: (command: PointerCommand) => void
+  getVoiceControlStatus: () => Promise<VoiceControlStatus>
+  setVoiceControlEnabled: (enabled: boolean) => Promise<VoiceControlStatus>
   getUpdateStatus: () => Promise<AppUpdateStatus>
   checkForUpdates: () => Promise<AppUpdateStatus>
   installUpdate: () => Promise<boolean>
@@ -73,8 +89,13 @@ export interface WidgetControls {
   onWindowsControlEvent: (
     callback: (event: WindowsControlEvent) => void,
   ) => () => void
+  onVoiceCommand: (callback: (event: VoiceCommandEvent) => void) => () => void
+  onVoiceControlStatus: (
+    callback: (status: VoiceControlStatus) => void,
+  ) => () => void
   onUpdateStatus: (callback: (status: AppUpdateStatus) => void) => () => void
   onStateChange: (callback: (expanded: boolean) => void) => () => void
+  onViewModeChange: (callback: (mode: WidgetViewMode) => void) => () => void
   onTaskPickerStateChange: (callback: (open: boolean) => void) => () => void
   onTaskPickerGesture: (callback: (gesture: GestureName) => void) => () => void
   onMessage: (callback: (message: string) => void) => () => void

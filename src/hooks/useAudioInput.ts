@@ -4,13 +4,16 @@ export type AudioInputPhase = 'idle' | 'loading' | 'active' | 'error'
 
 interface UseAudioInputOptions {
   deviceId: string
+  meterActive?: boolean
   onActivated?: () => void
 }
 
-const METER_INTERVAL_MS = 90
+const METER_INTERVAL_MS = 160
+const METER_STEPS = 20
 
 export function useAudioInput({
   deviceId,
+  meterActive = true,
   onActivated,
 }: UseAudioInputOptions) {
   const [phase, setPhase] = useState<AudioInputPhase>('idle')
@@ -21,6 +24,9 @@ export function useAudioInput({
   const animationFrameRef = useRef<number | null>(null)
   const requestRef = useRef(0)
   const lastMeterUpdateRef = useRef(0)
+  const meterActiveRef = useRef(meterActive)
+
+  meterActiveRef.current = meterActive
 
   const releaseResources = useCallback(() => {
     if (animationFrameRef.current !== null) {
@@ -42,8 +48,25 @@ export function useAudioInput({
     setPhase('idle')
   }, [releaseResources])
 
+  useEffect(() => {
+    if (!meterActive) stop()
+  }, [meterActive, stop])
+
+  useEffect(() => {
+    const stopWhenHidden = () => {
+      if (document.hidden) stop()
+    }
+    document.addEventListener('visibilitychange', stopWhenHidden)
+    stopWhenHidden()
+    return () => document.removeEventListener('visibilitychange', stopWhenHidden)
+  }, [stop])
+
   const start = useCallback(
     async (deviceOverride?: string) => {
+      if (!meterActiveRef.current || document.hidden) {
+        stop()
+        return
+      }
       const requestId = ++requestRef.current
       const requestedDeviceId = deviceOverride ?? deviceId
       releaseResources()
@@ -83,6 +106,7 @@ export function useAudioInput({
         const updateMeter = (now: number) => {
           if (requestId !== requestRef.current) return
           animationFrameRef.current = requestAnimationFrame(updateMeter)
+          if (!meterActiveRef.current || document.hidden) return
           if (now - lastMeterUpdateRef.current < METER_INTERVAL_MS) return
           lastMeterUpdateRef.current = now
           analyser.getByteTimeDomainData(samples)
@@ -92,7 +116,9 @@ export function useAudioInput({
             sum += normalized * normalized
           }
           const rms = Math.sqrt(sum / samples.length)
-          setLevel(Math.min(1, rms * 3.2))
+          const nextLevel =
+            Math.round(Math.min(1, rms * 3.2) * METER_STEPS) / METER_STEPS
+          setLevel((current) => (current === nextLevel ? current : nextLevel))
         }
 
         animationFrameRef.current = requestAnimationFrame(updateMeter)
@@ -112,7 +138,7 @@ export function useAudioInput({
         setPhase('error')
       }
     },
-    [deviceId, onActivated, releaseResources],
+    [deviceId, onActivated, releaseResources, stop],
   )
 
   useEffect(

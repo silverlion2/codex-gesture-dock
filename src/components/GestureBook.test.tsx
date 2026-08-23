@@ -45,4 +45,21 @@ describe('GestureBook', () => {
     expect(screen.getByText('打开文件资源管理器')).toBeTruthy()
     expect(screen.getAllByRole('article')).toHaveLength(6)
   })
+
+  it('shows the three continuous controls in air-pointer mode', () => {
+    render(
+      <GestureBook
+        enabled
+        gesture={{ ...activeGesture, pointerActivity: 'clicking' }}
+        mode="pointer"
+      />,
+    )
+
+    expect(screen.getByText('免触控屏幕控制')).toBeTruthy()
+    expect(screen.getByText('移动系统指针')).toBeTruthy()
+    expect(screen.getByText('单击左键')).toBeTruthy()
+    expect(screen.getByText('滚动页面')).toBeTruthy()
+    expect(screen.getByText('已执行单击')).toBeTruthy()
+    expect(screen.getAllByRole('article')).toHaveLength(3)
+  })
 })

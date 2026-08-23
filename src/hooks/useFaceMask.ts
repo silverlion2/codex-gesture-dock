@@ -18,7 +18,7 @@ interface UseFaceMaskOptions {
   style: FaceMaskStyle
 }
 
-const INFERENCE_INTERVAL_MS = 50
+const INFERENCE_INTERVAL_MS = 66
 
 export function useFaceMask({ active, videoRef, canvasRef, style }: UseFaceMaskOptions) {
   const [phase, setPhase] = useState<FaceMaskPhase>('idle')
@@ -46,6 +46,7 @@ export function useFaceMask({ active, videoRef, canvasRef, style }: UseFaceMaskO
   const predict = useCallback(() => {
     if (!activeRef.current) return
     frameRef.current = requestAnimationFrame(predict)
+    if (document.hidden) return
     const video = videoRef.current
     const canvas = canvasRef.current
     const landmarker = landmarkerRef.current

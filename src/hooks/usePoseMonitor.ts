@@ -46,12 +46,17 @@ interface UsePoseMonitorOptions {
   settings: ReminderSettings
   videoDeviceId?: string
   onReminder: (message: string) => void
+  renderOverlay?: boolean
+  resourceSaving?: boolean
 }
 
 const CALIBRATION_MS = 4_000
 const AWAY_GRACE_MS = 1_200
 const MAX_TREND_POINTS = 42
 const POSE_INFERENCE_INTERVAL_MS = 100
+const SAVING_POSE_INFERENCE_INTERVAL_MS = 220
+const UI_UPDATE_INTERVAL_MS = 140
+const SAVING_UI_UPDATE_INTERVAL_MS = 500
 
 const reminderDelay: Record<ReminderSettings['sensitivity'], number> = {
   gentle: 15_000,
@@ -71,6 +76,8 @@ export function usePoseMonitor({
   settings,
   videoDeviceId = '',
   onReminder,
+  renderOverlay = true,
+  resourceSaving = false,
 }: UsePoseMonitorOptions) {
   const [phase, setPhaseState] = useState<MonitorPhase>('idle')
   const [error, setError] = useState('')
@@ -106,6 +113,31 @@ export function usePoseMonitor({
   const trendIdRef = useRef(0)
   const sessionRequestRef = useRef(0)
   const disposedRef = useRef(false)
+  const renderOverlayRef = useRef(renderOverlay)
+  const resourceSavingRef = useRef(resourceSaving)
+
+  useEffect(() => {
+    renderOverlayRef.current = renderOverlay
+    resourceSavingRef.current = resourceSaving
+  }, [renderOverlay, resourceSaving])
+
+  useEffect(() => {
+    const track = streamRef.current?.getVideoTracks?.()[0]
+    if (!track?.applyConstraints) return
+    const constraints: MediaTrackConstraints = resourceSaving
+      ? {
+          width: { ideal: 640 },
+          height: { ideal: 360 },
+          frameRate: { ideal: 15, max: 20 },
+        }
+      : {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        }
+    void track.applyConstraints(constraints).catch(() => {
+      // Some cameras expose fixed modes; inference throttling still saves work.
+    })
+  }, [resourceSaving])
 
   const setPhase = useCallback((next: MonitorPhase) => {
     phaseRef.current = next
@@ -176,6 +208,10 @@ export function usePoseMonitor({
     if (canvas && context) context.clearRect(0, 0, canvas.width, canvas.height)
   }, [canvasRef])
 
+  useEffect(() => {
+    if (!renderOverlay) clearCanvas()
+  }, [clearCanvas, renderOverlay])
+
   const handleFeatures = useCallback(
     (features: PostureFeatures | null, now: number) => {
       if (phaseRef.current === 'calibrating') {
@@ -239,7 +275,10 @@ export function usePoseMonitor({
       statusRef.current = nextStatus
       presenceRef.current = true
 
-      if (now - lastUiUpdateRef.current > 140) {
+      const uiUpdateInterval = resourceSavingRef.current
+        ? SAVING_UI_UPDATE_INTERVAL_MS
+        : UI_UPDATE_INTERVAL_MS
+      if (now - lastUiUpdateRef.current > uiUpdateInterval) {
         lastUiUpdateRef.current = now
         setScore(smoothed)
         setStatus(nextStatus)
@@ -255,6 +294,8 @@ export function usePoseMonitor({
     // Keep the loop alive so a transient readiness gap does not end monitoring.
     frameRef.current = requestAnimationFrame(predict)
 
+    if (document.hidden) return
+
     const video = videoRef.current
     const landmarker = landmarkerRef.current
 
@@ -267,9 +308,12 @@ export function usePoseMonitor({
     }
 
     const now = performance.now()
+    const inferenceInterval = resourceSavingRef.current
+      ? SAVING_POSE_INFERENCE_INTERVAL_MS
+      : POSE_INFERENCE_INTERVAL_MS
     if (
       video.currentTime === lastVideoTimeRef.current ||
-      now - lastInferenceRef.current < POSE_INFERENCE_INTERVAL_MS
+      now - lastInferenceRef.current < inferenceInterval
     ) return
 
     lastVideoTimeRef.current = video.currentTime
@@ -278,8 +322,10 @@ export function usePoseMonitor({
     const landmarks = result.landmarks[0] as Landmark[] | undefined
     const features = landmarks ? extractPostureFeatures(landmarks) : null
 
-    if (landmarks) drawPose(landmarks, statusRef.current)
-    else clearCanvas()
+    if (renderOverlayRef.current) {
+      if (landmarks) drawPose(landmarks, statusRef.current)
+      else clearCanvas()
+    }
 
     handleFeatures(features, now)
   }, [clearCanvas, drawPose, handleFeatures, videoRef])
@@ -342,10 +388,12 @@ export function usePoseMonitor({
     try {
       await loadLandmarker()
       if (requestId !== sessionRequestRef.current) return
+      const saving = resourceSavingRef.current
       acquiredStream = await navigator.mediaDevices.getUserMedia({
         video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
+          width: { ideal: saving ? 640 : 1280 },
+          height: { ideal: saving ? 360 : 720 },
+          ...(saving ? { frameRate: { ideal: 15, max: 20 } } : {}),
           ...(requestedDeviceId
             ? { deviceId: { exact: requestedDeviceId } }
             : { facingMode: 'user' }),

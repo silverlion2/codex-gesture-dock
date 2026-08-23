@@ -794,6 +794,58 @@ select:focus-visible {
 
 .mini-toggle.is-on { background: var(--green); }
 .mini-toggle.is-on i { transform: translateX(13px); }
+.mini-toggle:disabled { cursor: progress; opacity: 0.65; }
+
+.voice-command-setting {
+  min-height: 58px;
+  height: auto;
+  padding-block: 6px;
+}
+
+.voice-command-status {
+  overflow: hidden;
+  color: #69716b;
+  font-size: 9px;
+  font-weight: 650;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.voice-command-status.is-listening { color: var(--green-dark); }
+.voice-command-status.is-error,
+.voice-command-status.is-unavailable { color: #9b3c32; }
+
+.voice-command-guide {
+  border-top: 1px solid var(--border);
+  color: #545d56;
+  font-size: 10px;
+}
+
+.voice-command-guide summary {
+  padding: 8px 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.voice-command-guide > div {
+  max-height: 180px;
+  overflow: auto;
+  padding: 0 12px 10px 28px;
+}
+
+.voice-command-guide strong {
+  display: block;
+  margin: 4px 0;
+  color: #303832;
+}
+
+.voice-command-guide ul {
+  margin: 0 0 8px;
+  padding-left: 16px;
+  line-height: 1.55;
+}
 
 .widget-setting-row select {
   width: 82px;
@@ -8390,6 +8442,16 @@ html.electron-runtime.task-window body {
   pointer-events: auto;
 }
 
+.is-collapsed.is-minimal .floating-panel {
+  opacity: 0;
+  transform: scale(0.82);
+  pointer-events: none;
+}
+
+.is-minimal .widget-toast {
+  display: none;
+}
+
 .is-collapsed .widget-header {
   height: 46px;
   padding: 0 8px 0 13px;
@@ -9348,7 +9410,10 @@ html.electron-runtime.task-window body {
 }
 
 .is-expanded .dashboard-controls {
+  min-height: 0;
+  overflow-y: auto;
   gap: 12px;
+  padding-right: 2px;
 }
 
 .is-expanded .dashboard-controls .widget-settings {
@@ -9368,6 +9433,11 @@ html.electron-runtime.task-window body {
   padding: 0 12px;
 }
 
+.is-expanded .dashboard-controls .voice-command-setting {
+  min-height: 64px;
+  height: auto;
+}
+
 .is-expanded .widget-setting-row > span {
   font-size: 13px;
   font-weight: 700;
@@ -9379,7 +9449,7 @@ html.electron-runtime.task-window body {
 }
 
 .is-expanded .gesture-book {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   padding: 12px;
@@ -9428,10 +9498,16 @@ html.electron-runtime.task-window body {
 }
 
 .is-expanded .gesture-book-grid {
-  min-height: 0;
-  flex: 1 1 auto;
+  min-height: 114px;
+  flex: 0 0 auto;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(3, minmax(34px, auto));
   gap: 6px;
+}
+
+.is-expanded .gesture-book-grid.pointer-guide-grid {
+  min-height: 74px;
+  grid-template-rows: repeat(2, minmax(34px, auto));
 }
 
 .is-expanded .gesture-book-grid article {

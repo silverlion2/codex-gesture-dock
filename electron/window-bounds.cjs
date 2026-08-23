@@ -20,9 +20,10 @@ function sanitizeBounds(value) {
 
 function parseWidgetWindowState(value) {
   if (!value || typeof value !== 'object') {
-    return { collapsed: null, expanded: null }
+    return { minimal: null, collapsed: null, expanded: null }
   }
   return {
+    minimal: sanitizeBounds(value.minimal),
     collapsed: sanitizeBounds(value.collapsed),
     expanded: sanitizeBounds(value.expanded),
   }

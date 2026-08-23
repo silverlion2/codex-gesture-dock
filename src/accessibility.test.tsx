@@ -46,8 +46,17 @@ describe('accessibility', () => {
             gestureEnabled: true,
           }}
           gestureMode="codex"
+          voiceStatus={{
+            enabled: false,
+            supported: true,
+            phase: 'off',
+            culture: '',
+            recognizer: '',
+            message: '语音命令已关闭',
+          }}
           onChange={vi.fn()}
           onGestureModeChange={vi.fn()}
+          onVoiceEnabledChange={vi.fn()}
         />
         <GestureBook enabled gesture={idleGesture} />
         <CodexIntegrationPanel

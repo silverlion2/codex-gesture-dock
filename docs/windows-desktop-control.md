@@ -7,6 +7,7 @@
 ```mermaid
 flowchart LR
   Camera["本机摄像头手势"] --> Dock["Codex Gesture Dock"]
+  Speech["本机固定语音口令"] --> Dock
   Dock --> Adapter["Codex Adapter"]
   Adapter -->|"任务、回合、审批、事件"| Server["Codex App Server"]
   Adapter --> Core["Windows Control Core"]
@@ -14,6 +15,7 @@ flowchart LR
   Core -->|"进程限定实时事件"| Events["SetWinEventHook"]
   Core -->|"固定快捷键白名单"| Guard["Windows 前台窗口守卫"]
   Core -->|"固定系统动作白名单"| System["Windows 桌面与音量"]
+  Core -->|"受限坐标/单击/滚动"| Pointer["按需空中鼠标 helper"]
   Core -->|"有上限、脱敏、只读"| UIA["Windows UI Automation"]
   Guard --> Desktop["Codex Desktop"]
   UIA --> Desktop
@@ -23,7 +25,7 @@ flowchart LR
 Dock 目前分为两个独立层级：
 
 1. **Codex Adapter**：读取任务和完成文件，启动或追加回合，处理由 Dock 发起回合产生的命令/文件审批，并监听线程、回合和条目事件；同时声明 Codex 可用的桌面动作能力。
-2. **Windows Control Core**：一方面验证 `OpenAI.Codex` MSIX 身份、进程与前台窗口，只对验证通过的 Codex 发送固定语义动作；另一方面提供 6 个不针对特定程序的固定系统动作（显示桌面、任务视图、资源管理器、音量增减和静音）。两类动作共用持久化急停、限流和元数据审计。核心不接收任意按键、文本、脚本、窗口句柄或控件选择器。
+2. **Windows Control Core**：一方面验证 `OpenAI.Codex` MSIX 身份、进程与前台窗口，只对验证通过的 Codex 发送固定语义动作；另一方面提供 6 个不针对特定程序的固定系统动作（显示桌面、任务视图、资源管理器、音量增减和静音），以及用户明确选择后才启用的空中鼠标。三类动作共用持久化急停和限流。核心不接收任意按键、文本、脚本、窗口句柄或控件选择器；空中鼠标只接收当前显示器内的受限坐标、左键单击和固定步长滚动。
 
 App Server 的初始化、线程/回合 API、审批请求和流式通知遵循 [OpenAI Codex App Server protocol](https://learn.chatgpt.com/docs/app-server)。
 
@@ -36,11 +38,13 @@ App Server 的初始化、线程/回合 API、审批请求和流式通知遵循 
 | 模块 | 状态 | 当前范围 |
 | --- | --- | --- |
 | Codex Adapter | 完成（v1） | 自主管理 App Server 生命周期；统一任务、事件、审批、文件和桌面能力 |
-| Windows Control Core | 完成（v1） | MSIX 身份、动作白名单、脚本固定路径、前台守卫、急停与审计 |
+| Windows Control Core | 完成（v1） | MSIX 身份、动作白名单、System32 PowerShell 绝对路径、前台守卫、急停与审计 |
 | UI Automation 观察 | 可用（只读） | 有上限的元素树摘要与双重脱敏，不执行 Control Pattern |
 | Windows 事件订阅 | 完成（v1） | 进程限定的 `SetWinEventHook`，自动附加、脱离和重连 |
 | Codex 语义动作 | 完成（v1） | 固定动作经验证快捷键执行；UIA 无稳定业务控件时不伪造 Invoke |
 | Windows 系统动作 | 完成（v1） | 6 项固定组合键；独立手势映射；不接受调用方提供的按键序列 |
+| 空中鼠标 | 完成（v1） | 食指移动、稳定指向后捏合单击、张掌滚动；丢手/隐藏/审批时解除武装，并受急停、坐标边界、分类型限流和 helper 退避约束 |
+| 本机语音命令 | 完成（v1） | 用户每次会话明确开启；19 条中英文固定语法；白名单二次验证、限流、启动超时与按需 helper |
 | 通用多程序控制 | 设计完成、未开放 | 新程序必须增加独立 Adapter 和身份/动作策略，不提供任意程序入口 |
 
 ## 控制边界
@@ -52,10 +56,12 @@ App Server 的初始化、线程/回合 API、审批请求和流式通知遵循 
 | 命令和文件审批 | App Server 服务端请求 | 仅 Dock 发起回合；只允许本次或拒绝 |
 | Codex 快捷键动作 | Windows 前台守卫 | 固定动作白名单，不接收任意按键文本 |
 | Windows 系统动作 | 固定系统键 helper | 仅桌面、任务视图、资源管理器和音量 6 项枚举动作 |
+| 空中鼠标 | 受限 IPC + 常驻按需 helper | 只允许当前显示器工作区坐标、稳定指向后的左键单击和 ±1 固定步长滚动；审批出现即关闭；无键盘/拖拽/右键/目标语义 |
+| 本机语音命令 | Windows `System.Speech` + 固定 Grammar | 只从随包中英文口令产生已知动作；不自由转写、不存音频、不发网络、不参与审批 |
 | 窗口事件 | `SetWinEventHook` | 只绑定验证后的 Codex PID，不返回窗口正文 |
 | 急停与审计 | IPC + 本机 JSONL | 状态持久化；审计仅含动作元数据，不含任务内容 |
 | 文件打开与定位 | Electron shell | 仅来自 App Server 最近文件清单的短期 ID |
-| 任意窗口点击、键盘输入、密码框 | 不支持 | 不进入默认能力范围 |
+| 任意键盘输入、文字、脚本、窗口选择器、密码框 | 不支持 | 不进入默认能力范围 |
 
 Dock 使用独立 App Server 连接，因此不能接管另一个客户端已经持有的审批弹窗。对于由 Codex Desktop 自身启动的回合，Dock 通过轮询任务状态保持可见性；只有从 Dock 发起的回合会把审批请求路由回 Dock。
 
@@ -78,6 +84,8 @@ Dock 使用独立 App Server 连接，因此不能接管另一个客户端已经
 - [已完成] 当前 UIA 不提供稳定业务 Pattern，因此使用固定快捷键桥；坐标点击不作为回退。
 - [已完成] 每次执行前重新验证 MSIX 身份、进程和前台窗口；任何身份不一致都会失败关闭。
 - [已完成] 独立 Windows 手势模式只暴露显示桌面、任务视图、打开资源管理器、音量增减和静音；主进程与 PowerShell helper 双重枚举校验。
+- [已完成] 独立空中鼠标模式复用手部关键点，只暴露屏幕内移动、稳定指向后的左键单击和固定滚动；Renderer、Main 和 helper 三层验证结构与范围，丢手/隐藏/审批时解除武装，helper 失败后退避，且不把坐标点击作为 Codex 语义动作的回退。
+- [已完成] 本机语音命令只在用户明确开启后以绝对 System32 PowerShell 路径启动固定 helper；PowerShell 只加载 19 条固定语法，Main 再次验证动作、短语长度和置信度并限流，关闭后忽略晚到输出。语音不能直接授权审批，经语音发起的 Codex/Windows 固定动作仍通过现有急停与身份边界。
 
 ### 阶段 4：策略与审批
 
@@ -95,4 +103,4 @@ Dock 使用独立 App Server 连接，因此不能接管另一个客户端已经
 
 ## v1 完成边界
 
-Codex Adapter、面向 Codex 的窗口控制和固定 Windows 系统动作已形成完整 v1 闭环。当前“Windows 控制”是 6 个系统级动作，不等于任意程序控制。未来增加浏览器、Office 等程序时，仍必须新增独立 Adapter、可信应用身份策略、动作白名单和测试矩阵；不会把现有接口扩展成任意程序、任意文本、任意命令或坐标点击。
+Codex Adapter、面向 Codex 的窗口控制、固定 Windows 系统动作、用户驱动的空中鼠标和用户明确开启的本机固定语音已形成完整 v1 闭环。空中鼠标提供的是类似物理鼠标的显式指针输入，不理解当前应用、按钮语义或内容；语音只是已有白名单动作的另一个受限入口。两者都不会代替 Codex Adapter 的身份与动作白名单。未来增加浏览器、Office 等程序的语义控制时，仍必须新增独立 Adapter、可信应用身份策略、动作白名单和测试矩阵；不会把现有接口扩展成任意键盘、文本、命令、脚本或窗口选择器。

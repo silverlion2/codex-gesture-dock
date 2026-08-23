@@ -24,7 +24,7 @@ export type WindowsAction =
   | 'volume_mute'
 
 export type GestureAction = CodexAction | WindowsAction
-export type GestureMode = 'codex' | 'windows'
+export type GestureMode = 'codex' | 'windows' | 'pointer'
 
 export interface CodexActionResult {
   action: CodexAction
@@ -125,11 +125,52 @@ export const WINDOWS_GESTURE_BINDINGS: Record<GestureName, GestureBinding> = {
   },
 }
 
+export const POINTER_GESTURE_BINDINGS: Record<GestureName, GestureBinding> = {
+  Victory: {
+    action: null,
+    actionLabel: '无固定动作',
+    gestureLabel: '胜利手势',
+    symbol: '✌',
+  },
+  Pointing_Up: {
+    action: null,
+    actionLabel: '移动指针',
+    gestureLabel: '伸出食指',
+    symbol: '☝',
+  },
+  Open_Palm: {
+    action: null,
+    actionLabel: '上下滚动',
+    gestureLabel: '张开手掌并移动',
+    symbol: '✋',
+  },
+  Thumb_Up: {
+    action: null,
+    actionLabel: '无固定动作',
+    gestureLabel: '竖起拇指',
+    symbol: '👍',
+  },
+  ILoveYou: {
+    action: null,
+    actionLabel: '无固定动作',
+    gestureLabel: 'I Love You 手势',
+    symbol: '🤟',
+  },
+  Closed_Fist: {
+    action: null,
+    actionLabel: '停止指针',
+    gestureLabel: '握拳',
+    symbol: '✊',
+  },
+}
+
 // Backwards-compatible name used by the Codex task picker and existing tests.
 export const GESTURE_BINDINGS = CODEX_GESTURE_BINDINGS
 
 export function getGestureBindings(mode: GestureMode) {
-  return mode === 'windows' ? WINDOWS_GESTURE_BINDINGS : CODEX_GESTURE_BINDINGS
+  if (mode === 'windows') return WINDOWS_GESTURE_BINDINGS
+  if (mode === 'pointer') return POINTER_GESTURE_BINDINGS
+  return CODEX_GESTURE_BINDINGS
 }
 
 export function isWindowsAction(action: GestureAction): action is WindowsAction {

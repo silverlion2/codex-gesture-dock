@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld('widgetControls', {
   isElectron: true,
   getState: () => ipcRenderer.invoke('widget:get-state'),
   setExpanded: (expanded) => ipcRenderer.invoke('widget:set-expanded', expanded),
+  getViewMode: () => ipcRenderer.invoke('widget:get-view-mode'),
+  setViewMode: (mode) => ipcRenderer.invoke('widget:set-view-mode', mode),
   close: () => ipcRenderer.invoke('widget:close'),
   openTaskPicker: () => ipcRenderer.invoke('task-picker:open'),
   closeTaskPicker: () => ipcRenderer.invoke('task-picker:close'),
@@ -12,6 +14,12 @@ contextBridge.exposeInMainWorld('widgetControls', {
   showMessage: (message) => ipcRenderer.invoke('widget:show-message', message),
   runCodexAction: (action) => ipcRenderer.invoke('codex:run-action', action),
   runWindowsAction: (action) => ipcRenderer.invoke('windows:run-action', action),
+  setPointerControlEnabled: (enabled) =>
+    ipcRenderer.invoke('windows:set-pointer-enabled', enabled),
+  sendPointerCommand: (command) => ipcRenderer.send('windows:pointer-command', command),
+  getVoiceControlStatus: () => ipcRenderer.invoke('voice:get-status'),
+  setVoiceControlEnabled: (enabled) =>
+    ipcRenderer.invoke('voice:set-enabled', enabled),
   getUpdateStatus: () => ipcRenderer.invoke('updates:get-status'),
   checkForUpdates: () => ipcRenderer.invoke('updates:check'),
   installUpdate: () => ipcRenderer.invoke('updates:install'),
@@ -56,6 +64,16 @@ contextBridge.exposeInMainWorld('widgetControls', {
     ipcRenderer.on('windows:control-event', listener)
     return () => ipcRenderer.removeListener('windows:control-event', listener)
   },
+  onVoiceCommand: (callback) => {
+    const listener = (_event, command) => callback(command)
+    ipcRenderer.on('voice:command', listener)
+    return () => ipcRenderer.removeListener('voice:command', listener)
+  },
+  onVoiceControlStatus: (callback) => {
+    const listener = (_event, status) => callback(status)
+    ipcRenderer.on('voice:status', listener)
+    return () => ipcRenderer.removeListener('voice:status', listener)
+  },
   onUpdateStatus: (callback) => {
     const listener = (_event, status) => callback(status)
     ipcRenderer.on('updates:status', listener)
@@ -65,6 +83,11 @@ contextBridge.exposeInMainWorld('widgetControls', {
     const listener = (_event, expanded) => callback(Boolean(expanded))
     ipcRenderer.on('widget:state-changed', listener)
     return () => ipcRenderer.removeListener('widget:state-changed', listener)
+  },
+  onViewModeChange: (callback) => {
+    const listener = (_event, mode) => callback(mode)
+    ipcRenderer.on('widget:view-mode-changed', listener)
+    return () => ipcRenderer.removeListener('widget:view-mode-changed', listener)
   },
   onTaskPickerStateChange: (callback) => {
     const listener = (_event, open) => callback(Boolean(open))

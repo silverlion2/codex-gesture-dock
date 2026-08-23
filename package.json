@@ -1,7 +1,7 @@
 {
   "name": "codex-gesture-dock",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "隐私优先的 Windows Codex 手势控制与摄像头辅助系统",
   "author": "silverlion2",
   "license": "MIT",
@@ -41,7 +41,9 @@
     "release": "node scripts/release.mjs",
     "version:check": "node scripts/version-check.mjs",
     "release:test": "node --test scripts/tests/*.mjs",
-    "test": "vitest run src electron/window-bounds.test.js --pool=forks --maxWorkers=1 && npm run release:test",
+    "test:unit": "vitest run src --pool=forks --maxWorkers=1",
+    "test:electron": "vitest run electron --pool=forks --maxWorkers=1",
+    "test": "vitest run src electron --pool=forks --maxWorkers=1 && npm run release:test",
     "test:a11y": "playwright test tests/e2e/accessibility.pw.ts",
     "test:a11y:edge": "node scripts/run-edge-a11y.mjs",
     "verify:win-artifacts": "powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/verify-windows-artifacts.ps1",
@@ -114,7 +116,9 @@
       "electron/codex-ui-inspect.ps1",
       "electron/codex-window-monitor.ps1",
       "electron/codex-window-policy.ps1",
-      "electron/windows-system-control.ps1"
+      "electron/windows-system-control.ps1",
+      "electron/windows-pointer-control.ps1",
+      "electron/windows-voice-control.ps1"
     ],
     "files": [
       "dist/**/*",
