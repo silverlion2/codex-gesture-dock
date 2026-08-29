@@ -9,6 +9,7 @@ const {
   session,
   shell,
 } = require('electron')
+const { configureSmokeRuntime } = require('./smoke-runtime.cjs')
 const path = require('node:path')
 const fs = require('node:fs')
 const os = require('node:os')
@@ -58,7 +59,7 @@ const isTaskWindowSmokeTest = process.argv.includes('--smoke-test-tasks')
 const isAnySmokeTest = isSmokeTest || isTaskWindowSmokeTest
 const smokeStartedAt = isAnySmokeTest ? Date.now() : 0
 if (isAnySmokeTest) {
-  app.disableHardwareAcceleration()
+  configureSmokeRuntime(app)
   app.setPath(
     'userData',
     fs.mkdtempSync(path.join(os.tmpdir(), 'codex-gesture-dock-smoke-')),

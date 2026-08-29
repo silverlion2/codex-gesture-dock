@@ -199,6 +199,8 @@ Renderer 的固定系统动作只能请求 `WINDOWS_ACTIONS` 中的枚举值。M
 
 ## 运维与回滚
 
+- Vitest 的 renderer/Electron 回归套件固定为单 worker 串行执行，并按 `components`、`lib`、应用 hooks/root 与 Electron 目录顺序分批。每个测试文件仍保持隔离，但单批待回收线程数量受限，不再让近百个文件的一次运行在资源受限 Windows 设备上积累线程终止任务；thread pool 也避免了每文件 Node 子进程的可选模块冷启动成本。
+- Electron smoke 模式在 `app.ready` 前同时关闭硬件加速、GPU 与软件光栅 GPU 子进程；正常启动不改变 GPU 策略。这样 smoke 可在无可用 GPU 的远程/隔离环境中测量窗口与资源预算。
 - GitHub Actions 执行测试、安全扫描、Windows 打包、签名验证、SBOM、来源证明和隔离安装测试。
 - Release 资产不可覆盖；错误版本通过发布更高补丁版本回滚，不能替换既有 tag 资产。
 - 自动更新只支持签名 NSIS 安装版；便携版保持手动更新。

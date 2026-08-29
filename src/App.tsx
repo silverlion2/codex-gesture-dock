@@ -816,6 +816,11 @@ function WidgetApp() {
                 type="button"
                 disabled={windowsControlBusy}
                 aria-pressed={integrationStatus?.control?.enabled ?? true}
+                aria-label={
+                  integrationStatus?.control?.enabled === false
+                    ? '恢复 Windows 控制'
+                    : '暂停 Windows 控制'
+                }
                 onClick={() =>
                   void setWindowsControlEnabled(
                     !(integrationStatus?.control?.enabled ?? true),

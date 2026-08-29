@@ -10211,3 +10211,99 @@ html.electron-runtime.task-window body {
   .image-ink-visuals { grid-template-columns: minmax(0,1fr); }
   .image-ink-visuals figure { grid-template-rows: minmax(130px,1fr) auto; }
 }
+
+/* Keep the expanded web preview usable below the desktop window minimum. */
+@media (max-width: 650px) {
+  .is-expanded .widget-header {
+    height: 108px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    padding: 8px 10px;
+  }
+
+  .is-expanded .widget-brand {
+    width: 100%;
+    justify-content: center;
+    gap: 10px;
+  }
+
+  .is-expanded .widget-brand > strong {
+    font-size: 23px;
+  }
+
+  .is-expanded .widget-trust-row {
+    min-width: 0;
+    gap: 8px;
+  }
+
+  .is-expanded .widget-trust-row > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .is-expanded .window-actions {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .is-expanded .widget-content {
+    height: calc(100% - 108px);
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    padding: 10px;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .is-expanded .camera-workspace-heading {
+    height: 70px;
+    flex-basis: 70px;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .is-expanded .dashboard-monitor {
+    min-height: auto;
+  }
+
+  .is-expanded .camera-mode-switcher {
+    width: 100%;
+    flex: 0 0 auto;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .is-expanded .camera-mode-switcher button {
+    flex: 0 0 auto;
+  }
+
+  .is-expanded .dashboard-monitor .compact-camera {
+    min-height: 240px;
+  }
+
+  .is-expanded .current-task-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .is-expanded .current-task-actions {
+    flex-direction: row;
+  }
+
+  .is-expanded .current-task-actions button {
+    width: auto;
+    min-width: 0;
+    flex: 1 1 0;
+  }
+
+  .is-expanded .monitor-data-grid {
+    height: auto;
+    flex-basis: auto;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .is-expanded .dashboard-controls {
+    min-height: 570px;
+  }
+}

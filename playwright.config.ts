@@ -1,4 +1,10 @@
-import { defineConfig, devices } from '@playwright/test'
+import { existsSync } from 'node:fs'
+import { chromium, defineConfig, devices } from '@playwright/test'
+
+const useInstalledEdge =
+  !process.env.CI &&
+  process.platform === 'win32' &&
+  !existsSync(chromium.executablePath())
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -25,13 +31,18 @@ export default defineConfig({
   webServer: {
     command: 'npm run preview -- --port 43997',
     url: 'http://127.0.0.1:43997',
-    reuseExistingServer: false,
+    reuseExistingServer: !process.env.CI,
     timeout: 60_000,
   },
   projects: [
     {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      name: useInstalledEdge ? 'edge-fallback' : 'chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+        ...(useInstalledEdge
+          ? { channel: 'msedge' as const, video: 'off' as const }
+          : {}),
+      },
     },
   ],
 })

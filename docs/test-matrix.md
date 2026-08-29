@@ -63,7 +63,7 @@
 | 任务筛选竞态 | 旧请求晚返回时不能覆盖新筛选结果 | Component | 是 |
 | 自动更新状态 | 仅安装版启用、进度有界、下载后才能安装 | Unit | 是 |
 | Renderer 恢复限流 | 一分钟最多自动恢复两次 | Unit | 是 |
-| 主面板无障碍 | 展开布局 0 axe violation | Chromium E2E | 是 |
+| 主面板无障碍 | 展开布局及 390px 窄视口 0 axe violation；窄视口单列、无页面级横向溢出、Windows 安全开关保留明确名称 | Chromium/Edge E2E | 是 |
 | 文件/任务/动作/确认 | 每一层 0 axe violation，Escape 正确返回 | Chromium E2E | 是 |
 | 打包主窗口 | app 协议加载、置顶、`348 × 360` 迷你摄像头尺寸及 `1120 × 760` 展开尺寸正确；自动 smoke 在无可用 GPU/远程会话中禁用硬件加速，正常运行不改变 GPU 策略 | Packaged smoke | 是 |
 | 最小占屏模式 | 主面板与视频工具退出可见/键盘/辅助技术导航，只留下有明确名称的 `78 × 78` 恢复气泡；摄像头视频元素、姿态和手势状态保持挂载，恢复后回到迷你 Dock；不申请屏幕捕获权限 | Unit + Chromium a11y + Electron smoke + Packaged manual | 是 / 自动验证窗口尺寸与恢复，发布前在真实屏幕共享中复核连续性 |
@@ -99,5 +99,9 @@
 - `npm run verify:win-artifacts`
 - `npm run readiness:audit`
 - `web-sop check --mode release`
+
+Vitest 的 `src` 与 `electron` 套件固定使用 `--pool=threads --maxWorkers=1`：保持单并发内存预算和文件隔离，并把 renderer 用例按现有目录边界拆成最多 46 个文件的顺序批次，限制线程终止资源在单次运行中的累积。thread pool 防止每文件 Node fork 带来的 QR 动态导入冷启动超时；QR SVG 集成测试必须在 30 秒门限内完成，不能通过提高超时掩盖资源回归。
+
+`npm run test:a11y` 在 CI 中继续使用 Playwright 管理的 Chromium；本地 Windows 若该浏览器尚未安装，则自动使用系统 Edge 通道执行同一套用例并关闭依赖额外 FFmpeg 下载的视频录制，失败截图与 trace 仍保留。本地已有同端口生产预览时直接复用，CI 仍强制启动隔离预览。显式 `test:a11y:edge` 命令仍用于固定 Edge 的专项复核。
 
 每个缺陷修复必须增加能复现原问题的自动测试；硬件、证书或真实发布链路无法本地模拟时，必须留下结构化验证报告。

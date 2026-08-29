@@ -87,6 +87,32 @@ test('expanded dashboard meets automated accessibility rules', async ({ page }) 
   await expectAccessible(page)
 })
 
+test('expanded dashboard stays within a narrow web viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/?mockTasks=1')
+
+  await expect(
+    page.getByRole('region', { name: 'Codex Gesture Dock 控制面板' }),
+  ).toBeVisible()
+  await expect(page.getByRole('button', { name: '姿态' })).toBeVisible()
+  await expect(
+    page.locator('.window-actions').getByRole('button', {
+      name: '暂停 Windows 控制',
+    }),
+  ).toBeVisible()
+
+  const layout = await page.evaluate(() => ({
+    viewportWidth: window.innerWidth,
+    documentWidth: document.documentElement.scrollWidth,
+    contentColumns: getComputedStyle(
+      document.querySelector<HTMLElement>('.widget-content')!,
+    ).gridTemplateColumns.split(' ').length,
+  }))
+  expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewportWidth)
+  expect(layout.contentColumns).toBe(1)
+  await expectAccessible(page)
+})
+
 test('compact camera dock meets automated accessibility rules', async ({ page }) => {
   await page.setViewportSize({ width: 348, height: 360 })
   await page.goto('/?widget=collapsed')
