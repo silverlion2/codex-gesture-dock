@@ -4,6 +4,14 @@ import { readdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
+import {
+  createNapiCanvasLicenseFallbacks,
+  napiCanvasLicensePath,
+  napiCanvasParentPackage,
+  napiCanvasApprovedVersion,
+  napiCanvasLicenseSha256,
+  usesNapiCanvasParentNotice,
+} from './third-party-license-fallbacks.mjs'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const packageJson = JSON.parse(
@@ -19,10 +27,7 @@ const knownLicenseFiles = new Map([
     'lazy-val',
     path.join(projectRoot, 'third_party_licenses', 'LazyVal-MIT.txt'),
   ],
-  [
-    '@napi-rs/canvas-win32-x64-msvc',
-    path.join(projectRoot, 'node_modules', '@napi-rs', 'canvas', 'LICENSE'),
-  ],
+  ...createNapiCanvasLicenseFallbacks(projectRoot),
   [
     'tr46',
     path.join(projectRoot, 'third_party_licenses', 'Tr46-MIT.txt'),
@@ -63,6 +68,9 @@ const packages = JSON.parse(query)
   .sort((left, right) =>
     `${left.name}@${left.version}`.localeCompare(`${right.name}@${right.version}`),
   )
+const hasNapiCanvasParentNotice = packages.some(
+  (entry) => entry.name === napiCanvasParentPackage,
+)
 
 async function findLicenseFiles(packageDirectory) {
   const entries = await readdir(packageDirectory, { withFileTypes: true })
@@ -80,6 +88,18 @@ const inventory = []
 const licenseSections = []
 const missingLicenses = []
 
+const napiCanvasLicenseContents = await readFile(
+  napiCanvasLicensePath(projectRoot),
+)
+const napiCanvasLicenseDigest = createHash('sha256')
+  .update(napiCanvasLicenseContents)
+  .digest('hex')
+if (napiCanvasLicenseDigest !== napiCanvasLicenseSha256) {
+  throw new Error(
+    'third_party_licenses/Napi-RS-Canvas-MIT.txt does not match its approved SHA-256.',
+  )
+}
+
 for (const asset of bundledAssets) {
   const assetContents = await readFile(asset.assetPath)
   const assetDigest = createHash('sha256').update(assetContents).digest('hex')
@@ -92,7 +112,7 @@ for (const asset of bundledAssets) {
     [
       '='.repeat(80),
       `${asset.name}@${asset.version} — ${asset.license}`,
-      `Source file: ${path.relative(projectRoot, asset.licensePath)}`,
+      `Source file: ${path.relative(projectRoot, asset.licensePath).split(path.sep).join('/')}`,
       `Asset SHA-256: ${assetDigest}`,
       '='.repeat(80),
       licenseContents,
@@ -112,11 +132,36 @@ for (const entry of packages) {
   if (licenseSources.length === 0 && knownLicenseFile) {
     licenseSources.push({
       path: knownLicenseFile,
-      name: path.relative(projectRoot, knownLicenseFile),
+      name: path.relative(projectRoot, knownLicenseFile).split(path.sep).join('/'),
     })
   }
   if (licenseSources.length === 0) {
     missingLicenses.push(`${entry.name}@${entry.version} (${license})`)
+    continue
+  }
+
+  // Aggregation is approved only for this release and identical MIT text.
+  // Check bundled licenses too: a new NOTICE must never be silently dropped.
+  if (entry.name === napiCanvasParentPackage || usesNapiCanvasParentNotice(entry.name)) {
+    if (entry.version !== napiCanvasApprovedVersion || license !== 'MIT') {
+      throw new Error(`${entry.name}@${entry.version} requires a new canvas license review.`)
+    }
+    for (const source of licenseSources) {
+      const contents = (await readFile(source.path, 'utf8')).trim()
+      if (contents !== napiCanvasLicenseContents.toString('utf8').trim()) {
+        throw new Error(`${entry.name}@${entry.version} has unapproved canvas license or notice text.`)
+      }
+    }
+  }
+
+  // Both the native package and parent have been validated before output is
+  // written. Their shared notice therefore remains independent of the OS.
+  if (usesNapiCanvasParentNotice(entry.name)) {
+    if (!hasNapiCanvasParentNotice) {
+      throw new Error(
+        `${entry.name}@${entry.version} cannot be aggregated without ${napiCanvasParentPackage}.`,
+      )
+    }
     continue
   }
 
@@ -187,6 +232,10 @@ The bundled Noto Sans SC variable font is loaded only when the user exports a
 searchable scanned PDF. jsPDF embeds only the glyph subset used by that PDF's
 local OCR text layer. Source revision:
 https://github.com/google/fonts/commit/2894aab31764f10f29c421bdfd2340d3b382d384
+
+The @napi-rs/canvas MIT entry also covers its validated x64 native packages
+for Windows MSVC and Linux GNU/musl. Their exact package-name fallbacks use the
+tracked v1.0.3 license text so platform selection does not change this report.
 `
 
 const bundle = `Production dependency license texts for Codex Gesture Dock ${packageJson.version}

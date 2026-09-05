@@ -9,7 +9,6 @@ verified asset hashes for version 0.6.0; CI rejects stale output.
 | Noto Sans SC Variable | google-fonts@2894aab31764 | OFL-1.1 |
 | @babel/runtime | 7.29.7 | MIT |
 | @mediapipe/tasks-vision | 0.10.35 | Apache-2.0 |
-| @napi-rs/canvas-win32-x64-msvc | 1.0.3 | MIT |
 | @napi-rs/canvas | 1.0.3 | MIT |
 | @techstark/opencv-js | 5.0.0-release.1 | Apache-2.0 |
 | @tesseract.js-data/chi_sim | 1.0.0 | Apache-2.0 |
@@ -102,3 +101,7 @@ The bundled Noto Sans SC variable font is loaded only when the user exports a
 searchable scanned PDF. jsPDF embeds only the glyph subset used by that PDF's
 local OCR text layer. Source revision:
 https://github.com/google/fonts/commit/2894aab31764f10f29c421bdfd2340d3b382d384
+
+The @napi-rs/canvas MIT entry also covers its validated x64 native packages
+for Windows MSVC and Linux GNU/musl. Their exact package-name fallbacks use the
+tracked v1.0.3 license text so platform selection does not change this report.

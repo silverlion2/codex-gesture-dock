@@ -69,6 +69,7 @@
 | 最小占屏模式 | 主面板与视频工具退出可见/键盘/辅助技术导航，只留下有明确名称的 `78 × 78` 恢复气泡；摄像头视频元素、姿态和手势状态保持挂载，恢复后回到迷你 Dock；不申请屏幕捕获权限 | Unit + Chromium a11y + Electron smoke + Packaged manual | 是 / 自动验证窗口尺寸与恢复，发布前在真实屏幕共享中复核连续性 |
 | 窗口边界恢复 | 最小占屏、迷你与展开边界分别保存，固定尺寸为 `78 × 78` / `348 × 360`，展开不小于 `980 × 760`，断开显示器后回到可见工作区 | Unit + Packaged manual | 是 / 实机复核 |
 | 打包任务窗口 | 摄像头区域可见、六手势可见、独立窗口、安全开关有效 | Packaged smoke | 是 |
+| 生产依赖许可证 | Windows MSVC、Linux GNU 与 Linux musl x64 的 `@napi-rs/canvas` 原生包只接受精确名称映射和哈希固定的 v1.0.3 MIT 文本；生成器夹具验证跨平台输出一致、缺少父包、父子版本/许可变化、额外 NOTICE、哈希篡改、过期产物及未知包均被拒绝，失败不覆盖既有产物 | Node unit + generator integration + generated artifact | 是 |
 | 安装与卸载 | 版本、注册表、主程序、卸载器与清理正确 | Windows CI | 是 |
 | N→N+1 升级 | 旧签名安装版可升级到新签名安装版 | Release verification | 需要真实发布 |
 | 签名自动更新 | `latest.yml` 与签名安装器大小/SHA-512 一致 | Release verification | 需要真实发布 |

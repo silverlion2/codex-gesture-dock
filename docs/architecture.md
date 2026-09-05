@@ -201,6 +201,7 @@ Renderer 的固定系统动作只能请求 `WINDOWS_ACTIONS` 中的枚举值。M
 
 - Vitest 的 renderer/Electron 回归套件固定为单 worker 串行执行，并按 `components`、`lib`、应用 hooks/root 与 Electron 目录顺序分批。每个测试文件仍保持隔离，但单批待回收线程数量受限，不再让近百个文件的一次运行在资源受限 Windows 设备上积累线程终止任务；thread pool 也避免了每文件 Node 子进程的可选模块冷启动成本。
 - Electron smoke 模式在 `app.ready` 前同时关闭硬件加速、GPU 与软件光栅 GPU 子进程；正常启动不改变 GPU 策略。这样 smoke 可在无可用 GPU 的远程/隔离环境中测量窗口与资源预算。
+- 生产许可证生成器对 `@napi-rs/canvas` 的 Windows MSVC 与 Linux GNU/musl x64 原生包逐个验证固定名称、父子包均为 v1.0.3/MIT 和已哈希的备用文本，再把共享许可聚合到父包条目。包自带的许可与 NOTICE 也必须与已审核文本一致；版本、许可或通知变更必须重新审核，其他缺少许可文本的生产包仍失败关闭。生成产物的来源路径统一为 `/` 分隔，避免 Windows 与 Linux 的路径格式差异导致过期检查失败。
 - GitHub Actions 执行测试、安全扫描、Windows 打包、签名验证、SBOM、来源证明和隔离安装测试。
 - Release 资产不可覆盖；错误版本通过发布更高补丁版本回滚，不能替换既有 tag 资产。
 - 自动更新只支持签名 NSIS 安装版；便携版保持手动更新。
