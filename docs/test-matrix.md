@@ -70,6 +70,7 @@
 | 窗口边界恢复 | 最小占屏、迷你与展开边界分别保存，固定尺寸为 `78 × 78` / `348 × 360`，展开不小于 `980 × 760`，断开显示器后回到可见工作区 | Unit + Packaged manual | 是 / 实机复核 |
 | 打包任务窗口 | 摄像头区域可见、六手势可见、独立窗口、安全开关有效 | Packaged smoke | 是 |
 | 生产依赖许可证 | Windows MSVC、Linux GNU 与 Linux musl x64 的 `@napi-rs/canvas` 原生包只接受精确名称映射和哈希固定的 v1.0.3 MIT 文本；生成器夹具验证跨平台输出一致、缺少父包、父子版本/许可变化、额外 NOTICE、哈希篡改、过期产物及未知包均被拒绝，失败不覆盖既有产物 | Node unit + generator integration + generated artifact | 是 |
+| 发布资产证据 | 单一白名单固定 setup、portable、blockmap、`latest.yml` 与 SBOM；生成排序稳定的 SHA-256 清单和 JSON manifest；缺失/空文件、陈旧版本资产、setup 篡改或 `latest.yml` 路径/大小/SHA-512 不符时失败关闭，且验证失败不覆盖既有证据；Windows verifier 复核 manifest 文件数、版本、大小和摘要，并在污染/混合 `PSModulePath` 下通过隔离的系统 Windows PowerShell 检查 Authenticode | Node unit + Windows artifact integration | 是 / 有效签名主体与时间戳仍需 Release runner |
 | 安装与卸载 | 版本、注册表、主程序、卸载器与清理正确 | Windows CI | 是 |
 | N→N+1 升级 | 旧签名安装版可升级到新签名安装版 | Release verification | 需要真实发布 |
 | 签名自动更新 | `latest.yml` 与签名安装器大小/SHA-512 一致 | Release verification | 需要真实发布 |
@@ -98,6 +99,7 @@
 - `npm run desktop:smoke:packaged`
 - `npm run codex:smoke`
 - `npm run verify:win-artifacts`
+- `npm run release:evidence`
 - `npm run readiness:audit`
 - `web-sop check --mode release`
 

@@ -145,9 +145,12 @@ npm run dev:desktop
 
 ```powershell
 npm run dist:win
+npm run sbom:generate
+npm run release:evidence
+npm run verify:win-artifacts
 ```
 
-产物会生成在 `artifacts/`，包括可自动更新的 NSIS `setup.exe`、portable 版、`latest.yml` 和差分更新 blockmap。自动更新只适用于安装版；旧 portable 用户需要先手动下载安装版。本机 `dist:win` 是开发构建，不具备官方签名。
+产物会生成在 `artifacts/`，包括可自动更新的 NSIS `setup.exe`、portable 版、`latest.yml` 和差分更新 blockmap。`release:evidence` 在全部主资产存在且 `latest.yml` 的安装器路径、大小和 SHA-512 一致后，生成规范 `release-assets.json` 与 `SHA256SUMS.txt`；缺失、陈旧版本或篡改输入会在覆盖既有证据前失败。自动更新只适用于安装版；旧 portable 用户需要先手动下载安装版。本机 `dist:win` 是开发构建，不具备官方签名。
 
 ## 发布版本
 

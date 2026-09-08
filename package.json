@@ -35,6 +35,7 @@
     "licenses:generate": "node scripts/third-party-notices.mjs",
     "licenses:check": "node scripts/third-party-notices.mjs --check",
     "sbom:generate": "node scripts/generate-sbom.mjs",
+    "release:evidence": "node scripts/generate-release-evidence.mjs",
     "install:smoke": "powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install-smoke.ps1",
     "preview": "vite preview --host 127.0.0.1",
     "readiness:audit": "powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/audit-commercial-readiness.ps1",

@@ -15,6 +15,7 @@
 - [ ] 官方 npm audit 为 0 个 high/critical，许可证清单为最新。
 - [ ] CodeQL、Dependency Review 和固定 SHA 的 Actions 通过。
 - [ ] Windows 打包目录已清理，不存在旧版本残留产物。
+- [ ] `release-assets.json` 是版本匹配的唯一发布白名单，五个主资产的大小/SHA-256 与 `SHA256SUMS.txt` 一致；`latest.yml` 的 setup 路径、大小和 SHA-512 已独立复核。
 
 ## Windows 签名与供应链
 
@@ -45,5 +46,7 @@
 - [ ] Release 资产设置为不可变，不允许覆盖同名 tag/资产。
 - [ ] 发布后重新下载资产并执行校验和、签名、SBOM 和 provenance 验证。
 - [ ] 若发现问题，停止推广并发布更高补丁版本；不得替换既有已发布资产。
+
+本地证据生成失败时不得覆盖上一份 `release-assets.json` 或 `SHA256SUMS.txt`；先保留失败输入和日志用于诊断，再从干净 `artifacts/` 重建。此本地回滚证据只关闭资产清单生成器门禁，不关闭 Authenticode、真实 N→N+1、自动更新或生产安装 smoke 门禁。
 
 发布证据保存版本、候选 commit、CI/Security URL、签名主体、资产 digest、验证时间和回滚版本。

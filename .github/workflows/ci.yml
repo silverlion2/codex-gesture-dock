@@ -56,6 +56,7 @@ jobs:
       - run: npm audit --audit-level=high --registry=https://registry.npmjs.org
       - run: npm run dist:win
       - run: npm run sbom:generate
+      - run: npm run release:evidence
       - run: npm run verify:win-artifacts
       - run: npm run desktop:smoke:packaged
       - name: Download previous public installer
@@ -77,6 +78,8 @@ jobs:
           path: |
             artifacts/latest.yml
             artifacts/sbom.cdx.json
+            artifacts/SHA256SUMS.txt
+            artifacts/release-assets.json
             work/windows-artifact-verification.json
             work/electron-smoke.json
             work/electron-task-window-smoke.json

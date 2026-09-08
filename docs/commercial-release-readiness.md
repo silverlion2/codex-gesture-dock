@@ -1,6 +1,6 @@
 # Commercial release readiness
 
-Last reviewed: 2026-08-08
+Last reviewed: 2026-09-09
 
 This document separates locally verified release engineering from evidence that
 can exist only after a signed GitHub release. A production release must not be
@@ -8,7 +8,7 @@ described as commercially ready while any blocking item below remains open.
 
 ## Verified locally
 
-- 53 application/desktop tests and 4 release-script tests pass.
+- 387 application/desktop tests and 10 release-script tests pass.
 - ESLint, TypeScript, Vite production build, version consistency, and
   third-party notice consistency pass.
 - `npm audit` reports zero known vulnerabilities, and `package-lock.json`
@@ -34,6 +34,15 @@ described as commercially ready while any blocking item below remains open.
 - A CycloneDX SBOM is generated for production dependencies.
 - The previous public installer is downloaded and independently matched against
   both its GitHub release-asset digest and published `SHA256SUMS.txt`.
+- A canonical release manifest fixes the exact five primary asset names and
+  seven publish files. Its generator rejects missing, empty, stale-version, or
+  metadata-mismatched inputs before replacing prior evidence; the Windows
+  verifier independently checks every recorded size and SHA-256 plus the setup
+  path, size, and SHA-512 in `latest.yml`.
+- Authenticode inspection runs in an isolated system Windows PowerShell child
+  with a runtime-local module path, and passes even when the caller provides a
+  mixed or polluted `PSModulePath`. Local candidate binaries remain correctly
+  reported as `NotSigned`.
 - GitHub Actions are pinned to full commit SHAs. CI and Release reject high
   npm advisories, and the Release workflow rejects tags whose commit is not
   contained in `origin/main` before installing dependencies or reading signing
@@ -68,7 +77,8 @@ described as commercially ready while any blocking item below remains open.
   variables.
 - [ ] Push these changes and require the CI and Security workflows to pass on
   the protected `main` branch.
-- [ ] Increment the application version above the currently published v0.5.0.
+- [x] Increment the application version above the currently published v0.5.0;
+  the local candidate and synchronized lockfile are at 0.6.0.
 - [ ] Run the tagged Release workflow and confirm setup, portable, installed
   executable, and generated uninstaller all report Authenticode status `Valid`,
   match the expected signer subject, and contain a trusted timestamp.

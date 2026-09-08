@@ -23,6 +23,8 @@
 | Windows System.Speech helper | 用户明确开启后的本机固定语法语音命令 | 按需独立进程；只输出白名单动作与固定短语，不输出自由转写或音频 |
 | GitHub Releases | 安装版更新源 | 仅接受 electron-builder 固定仓库配置 |
 
+发布资产由 `scripts/release-assets.mjs` 的单一白名单定义。生成器先在内存中验证 setup、portable、blockmap、`latest.yml` 与 CycloneDX SBOM 全部存在且非空，拒绝陈旧版本资产，并独立复核 `latest.yml` 的安装器路径、大小和 SHA-512；全部通过后才写出排序稳定的 `SHA256SUMS.txt` 和版本化 `release-assets.json`。Windows verifier、CI provenance 与 Release 发布步骤消费同一 manifest，避免多个手写资产名单漂移。验证失败发生在证据写入前，因此上一次证据可作为失败诊断基线；真正的已发布资产仍遵循不可覆盖、以更高补丁版本回滚的策略。Windows verifier 的 Authenticode 查询固定进入系统 Windows PowerShell 子进程，并把模块搜索路径限制为该运行时自己的 `$PSHOME\Modules`，避免调用者混入 PowerShell 7/Codex 模块路径后错误加载签名模块。
+
 ## 关键数据流
 
 ### 摄像头工具模式
