@@ -7,7 +7,14 @@ verification evidence of development work.
 
 ## 2026-09-09 — Canonical Windows release asset evidence
 
-Commit: [`549340d`](https://github.com/silverlion2/codex-gesture-dock/commit/549340d)
+Commits:
+
+- [`549340d`](https://github.com/silverlion2/codex-gesture-dock/commit/549340d)
+  added canonical release asset evidence.
+- [`a1fe39c`](https://github.com/silverlion2/codex-gesture-dock/commit/a1fe39c)
+  documented and wired that evidence into the guarded workflows.
+- [`09a9558`](https://github.com/silverlion2/codex-gesture-dock/commit/09a9558)
+  fixed Windows three/four-part release version comparison.
 
 - Added one canonical allowlist for the five primary Windows release assets and
   seven publish files, with deterministic SHA-256 checksums and a versioned JSON
@@ -36,9 +43,23 @@ Verification at handoff:
   measured 463 ms, 4 processes, and 118.1 MB private memory; the expanded/task
   path measured 2.374 s, 7 processes, and 203.6 MB private memory, both within
   their existing budgets.
-- `web-sop check --mode fast` passed. Commercial readiness remained false with
-  12 blockers before commit/push; no installer, signing identity, tag, release,
-  deployment, or external message was created.
+- The [first CI run on `a1fe39c`](https://github.com/silverlion2/codex-gesture-dock/actions/runs/34275961541)
+  failed only in isolated install verification: Windows reported the installed
+  file version as `0.5.0.0`, while the script compared it literally with package
+  version `0.5.0`. Security passed, and the remaining CI build, package, SBOM,
+  evidence, verifier, and packaged-smoke steps passed.
+- `09a9558` added a tested normalizer that accepts a missing or zero fourth
+  Windows version component and rejects non-zero revisions. The exact candidate
+  `09a9558ddd03c0feb28b818044f6c12c04d03f01` then passed
+  [CI 34276985953](https://github.com/silverlion2/codex-gesture-dock/actions/runs/34276985953)
+  and [Security 34276985697](https://github.com/silverlion2/codex-gesture-dock/actions/runs/34276985697),
+  including isolated current-user v0.5.0-to-v0.6.0 install, upgrade, launch,
+  silent uninstall, and registry cleanup. This is unsigned CI lifecycle
+  evidence; it does not satisfy Authenticode, a signed N→N+1 update, or a
+  production Release gate.
+- `web-sop check --mode fast` passed. The post-push commercial audit reported
+  exactly 9 blockers; no signing identity, tag, Release, deployment, or external
+  message was created.
 
 ## 2026-08-16 — Local visual and OCR expansion
 
