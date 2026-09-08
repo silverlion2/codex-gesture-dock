@@ -41,6 +41,7 @@ jobs:
         run: npm run version:check -- --tag "${{ github.ref_name }}"
       - run: npm run licenses:check
       - run: npm test
+      - run: npm run release:test:win
       - run: npm run lint
       - name: Require Windows signing configuration
         shell: pwsh

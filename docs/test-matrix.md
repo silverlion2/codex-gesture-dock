@@ -71,7 +71,7 @@
 | 打包任务窗口 | 摄像头区域可见、六手势可见、独立窗口、安全开关有效 | Packaged smoke | 是 |
 | 生产依赖许可证 | Windows MSVC、Linux GNU 与 Linux musl x64 的 `@napi-rs/canvas` 原生包只接受精确名称映射和哈希固定的 v1.0.3 MIT 文本；生成器夹具验证跨平台输出一致、缺少父包、父子版本/许可变化、额外 NOTICE、哈希篡改、过期产物及未知包均被拒绝，失败不覆盖既有产物 | Node unit + generator integration + generated artifact | 是 |
 | 发布资产证据 | 单一白名单固定 setup、portable、blockmap、`latest.yml` 与 SBOM；生成排序稳定的 SHA-256 清单和 JSON manifest；缺失/空文件、陈旧版本资产、setup 篡改或 `latest.yml` 路径/大小/SHA-512 不符时失败关闭，且验证失败不覆盖既有证据；Windows verifier 复核 manifest 文件数、版本、大小和摘要，并在污染/混合 `PSModulePath` 下通过隔离的系统 Windows PowerShell 检查 Authenticode | Node unit + Windows artifact integration | 是 / 有效签名主体与时间戳仍需 Release runner |
-| 安装与卸载 | 版本、注册表、主程序、卸载器与清理正确 | Windows CI | 是 |
+| 安装与卸载 | package semver、Windows 三/四段文件版本（仅允许缺省或零 revision）、注册表、主程序、卸载器与清理正确；helper 单测拒绝缺 patch、非零 revision 和版本不匹配，隔离 Windows CI 再执行真实生命周期 | PowerShell unit + Windows CI | 是 |
 | N→N+1 升级 | 旧签名安装版可升级到新签名安装版 | Release verification | 需要真实发布 |
 | 签名自动更新 | `latest.yml` 与签名安装器大小/SHA-512 一致 | Release verification | 需要真实发布 |
 | 摄像头实机 | 权限、真实画面、断开重连、设备占用错误 | Manual hardware QA | 发布前人工执行 |

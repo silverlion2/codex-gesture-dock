@@ -54,6 +54,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm audit --audit-level=high --registry=https://registry.npmjs.org
+      - run: npm run release:test:win
       - run: npm run dist:win
       - run: npm run sbom:generate
       - run: npm run release:evidence
