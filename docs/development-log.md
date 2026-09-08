@@ -5,6 +5,41 @@ It complements the user-facing [changelog](../CHANGELOG.md): the changelog group
 notable behavior by release, while this file preserves the sequence, commit, and
 verification evidence of development work.
 
+## 2026-09-09 — Canonical Windows release asset evidence
+
+Commit: [`549340d`](https://github.com/silverlion2/codex-gesture-dock/commit/549340d)
+
+- Added one canonical allowlist for the five primary Windows release assets and
+  seven publish files, with deterministic SHA-256 checksums and a versioned JSON
+  manifest consumed by CI, provenance, verification, and publishing.
+- Made evidence generation fail before writes when assets are missing, empty,
+  stale, or inconsistent with the setup path, size, and SHA-512 in `latest.yml`;
+  regression coverage confirms prior evidence remains intact after validation
+  failure.
+- Isolated Authenticode inspection in system Windows PowerShell with a
+  runtime-local module path. Verification succeeds with a deliberately polluted
+  caller `PSModulePath`, while unsigned local binaries remain `NotSigned` rather
+  than being reported as release-ready.
+- Kept signing, a real N→N+1 upgrade, signed auto-update, protected refs,
+  multi-display/DPI, camera hardware, production install, and public publishing
+  as explicit open gates.
+
+Verification at handoff:
+
+- 333 renderer/hook/library tests, 54 Electron tests, and 10 release helper
+  tests passed; ESLint, TypeScript, Vite production build, 5 Edge accessibility
+  journeys, version sync, 73-component notice consistency, and npm audit passed.
+- A clean Windows package produced setup, portable, blockmap, `latest.yml`, and
+  a 58-component CycloneDX SBOM. The canonical manifest and checksum verifier
+  passed under a polluted module path.
+- Packaged collapsed and expanded/task smoke checks passed. The collapsed path
+  measured 463 ms, 4 processes, and 118.1 MB private memory; the expanded/task
+  path measured 2.374 s, 7 processes, and 203.6 MB private memory, both within
+  their existing budgets.
+- `web-sop check --mode fast` passed. Commercial readiness remained false with
+  12 blockers before commit/push; no installer, signing identity, tag, release,
+  deployment, or external message was created.
+
 ## 2026-08-16 — Local visual and OCR expansion
 
 Commit: [`05892ff`](https://github.com/silverlion2/codex-gesture-dock/commit/05892ff1cda7f97dbe06ef57bf49b0fd70cb945a)
