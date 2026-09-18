@@ -81,9 +81,15 @@ export interface WindowsControlStatus {
 
 export interface WindowsControlEvent {
   type: string
-  processId: number | null
-  connected: boolean
-  identityVerified: boolean
+  kind?: 'monitor' | 'action' | 'pointer'
+  programId?: 'codex' | 'windows'
+  action?: string
+  ok?: boolean
+  message?: string
+  requestId?: string
+  processId?: number | null
+  connected?: boolean
+  identityVerified?: boolean
   timestamp: number
 }
 

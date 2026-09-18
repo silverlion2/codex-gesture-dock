@@ -191,6 +191,14 @@ select:focus-visible {
   box-shadow: 0 0 0 3px rgba(120, 215, 255, 0.16);
 }
 
+.floating-button-wrap.has-action-success .floating-button {
+  box-shadow: 0 0 0 7px rgba(120, 215, 255, 0.28), 0 12px 28px rgba(13, 69, 35, 0.32);
+}
+
+.floating-button-wrap.has-action-error .floating-button {
+  box-shadow: 0 0 0 7px rgba(214, 66, 62, 0.25), 0 12px 28px rgba(86, 25, 22, 0.3);
+}
+
 .floating-button-wrap.status-fair .floating-button,
 .floating-button-wrap.status-fair .bubble-drag-handle {
   background: #a96f08;

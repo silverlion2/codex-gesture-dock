@@ -387,7 +387,7 @@ export function usePoseMonitor({
 
     try {
       await loadLandmarker()
-      if (requestId !== sessionRequestRef.current) return
+      if (requestId !== sessionRequestRef.current) return false
       const saving = resourceSavingRef.current
       acquiredStream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -403,7 +403,7 @@ export function usePoseMonitor({
 
       if (requestId !== sessionRequestRef.current) {
         acquiredStream.getTracks().forEach((track) => track.stop())
-        return
+        return false
       }
       streamRef.current = acquiredStream
       const video = videoRef.current
@@ -414,18 +414,19 @@ export function usePoseMonitor({
         acquiredStream.getTracks().forEach((track) => track.stop())
         if (streamRef.current === acquiredStream) streamRef.current = null
         if (video.srcObject === acquiredStream) video.srcObject = null
-        return
+        return false
       }
       lastInferenceRef.current = Number.NEGATIVE_INFINITY
       lastVideoTimeRef.current = -1
       resetCalibration()
       frameRef.current = requestAnimationFrame(predict)
+      return true
     } catch (caught) {
       acquiredStream?.getTracks().forEach((track) => track.stop())
       if (streamRef.current === acquiredStream) streamRef.current = null
       const video = videoRef.current
       if (video && video.srcObject === acquiredStream) video.srcObject = null
-      if (requestId !== sessionRequestRef.current) return
+      if (requestId !== sessionRequestRef.current) return false
       const message =
         caught instanceof DOMException && caught.name === 'NotAllowedError'
           ? '摄像头权限被拒绝。请在浏览器地址栏重新允许访问。'
@@ -438,6 +439,7 @@ export function usePoseMonitor({
             : '无法启动摄像头，请检查设备是否被其他应用占用。'
       setError(message)
       setPhase('error')
+      return false
     }
   }, [
     clearCanvas,

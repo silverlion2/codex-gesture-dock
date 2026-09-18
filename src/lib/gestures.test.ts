@@ -4,10 +4,18 @@ import {
   GESTURE_HOLD_MS,
   GESTURE_RELEASE_MS,
   initialGestureMachineState,
+  isWindowsAction,
+  WINDOWS_ACTIONS,
   WINDOWS_GESTURE_BINDINGS,
 } from './gestures'
 
 describe('gesture confirmation state machine', () => {
+  it('routes every Windows command independently of the six hand bindings', () => {
+    for (const action of WINDOWS_ACTIONS) expect(isWindowsAction(action)).toBe(true)
+    expect(isWindowsAction('quick_chat')).toBe(false)
+    expect(isWindowsAction('dictation')).toBe(false)
+  })
+
   it('triggers only after a stable hold', () => {
     const started = advanceGestureMachine(initialGestureMachineState, {
       name: 'Victory',
@@ -83,6 +91,31 @@ describe('gesture confirmation state machine', () => {
 
     expect(confirmed.action).toBe('show_desktop')
     expect(confirmed.binding?.actionLabel).toBe('显示桌面')
+  })
+
+  it('prioritizes safe window management actions in Windows mode', () => {
+    const expected: Record<string, string> = {
+      Victory: 'switch_window',
+      ILoveYou: 'switch_window_back',
+      Closed_Fist: 'minimize_active_window',
+      Thumb_Up: 'maximize_active_window',
+      Pointing_Up: 'task_view',
+      Open_Palm: 'show_desktop',
+    }
+
+    for (const [name, action] of Object.entries(expected)) {
+      const started = advanceGestureMachine(
+        initialGestureMachineState,
+        { name, confidence: 0.94, now: 0 },
+        WINDOWS_GESTURE_BINDINGS,
+      )
+      const confirmed = advanceGestureMachine(
+        started.state,
+        { name, confidence: 0.94, now: GESTURE_HOLD_MS },
+        WINDOWS_GESTURE_BINDINGS,
+      )
+      expect(confirmed.action).toBe(action)
+    }
   })
 
   it('rearms only after a neutral release window', () => {

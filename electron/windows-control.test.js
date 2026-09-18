@@ -62,7 +62,10 @@ describe('Windows control core', () => {
       callback(null, JSON.stringify({
         ok: true,
         action: 'volume_up',
-        backend: 'fixed-system-key',
+        dryRun: false,
+        backend: 'send-input',
+        requested: 2,
+        sent: 2,
       })),
     )
     const core = createCore(execFileImpl)
@@ -93,6 +96,68 @@ describe('Windows control core', () => {
     const result = await core.runAction('windows', 'volume_up')
 
     expect(result.ok).toBe(false)
+  })
+
+  it('accepts only a complete SendInput result for new window actions', async () => {
+    const execFileImpl = vi.fn((_file, _args, _options, callback) =>
+      callback(null, JSON.stringify({
+        ok: true,
+        action: 'minimize_active_window',
+        dryRun: false,
+        backend: 'win32-window',
+        requested: 1,
+        sent: 1,
+      })),
+    )
+    const events = []
+    const core = createCore(execFileImpl, { onEvent: (event) => events.push(event) })
+
+    const result = await core.runAction('windows', 'minimize_active_window')
+
+    expect(result.ok).toBe(true)
+    expect(result.backend).toBe('win32-window')
+    expect(result.sent).toBe(1)
+    const [, args] = execFileImpl.mock.calls[0]
+    expect(args).toContain('-ExcludedProcessId')
+    expect(events).toEqual([expect.objectContaining({
+      type: 'action',
+      programId: 'windows',
+      action: 'minimize_active_window',
+      ok: true,
+    })])
+  })
+
+  it('fails closed when SendInput reports a partial send', async () => {
+    const core = createCore((_file, _args, _options, callback) =>
+      callback(null, JSON.stringify({
+        ok: true,
+        action: 'snap_left',
+        dryRun: false,
+        backend: 'send-input',
+        requested: 4,
+        sent: 3,
+      })),
+    )
+    const event = vi.fn()
+    core.onEvent = event
+
+    const result = await core.runAction('windows', 'snap_left')
+
+    expect(result.ok).toBe(false)
+    expect(event).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'snap_left',
+      ok: false,
+    }))
+  })
+
+  it('never treats a dry-run receipt as a successful desktop action', async () => {
+    const core = createCore((_file, _args, _options, callback) =>
+      callback(null, JSON.stringify({
+        ok: true, action: 'volume_up', backend: 'send-input',
+        requested: 2, sent: 2, dryRun: true,
+      })),
+    )
+    expect((await core.runAction('windows', 'volume_up')).ok).toBe(false)
   })
 
   it('defensively redacts content-bearing UI Automation names', async () => {

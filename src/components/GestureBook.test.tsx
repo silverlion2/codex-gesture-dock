@@ -42,7 +42,8 @@ describe('GestureBook', () => {
 
     expect(screen.getByText('Windows 全手势手册')).toBeTruthy()
     expect(screen.getByText('显示桌面')).toBeTruthy()
-    expect(screen.getByText('打开文件资源管理器')).toBeTruthy()
+    expect(screen.getByText('切换到下一个窗口')).toBeTruthy()
+    expect(screen.getByText('最小化当前窗口')).toBeTruthy()
     expect(screen.getAllByRole('article')).toHaveLength(6)
   })
 

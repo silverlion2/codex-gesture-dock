@@ -15,13 +15,19 @@ export type CodexAction =
   | 'sidebar'
   | 'search_tasks'
 
-export type WindowsAction =
-  | 'show_desktop'
-  | 'task_view'
-  | 'open_explorer'
-  | 'volume_up'
-  | 'volume_down'
-  | 'volume_mute'
+export const WINDOWS_ACTIONS = [
+  'switch_window',
+  'switch_window_back',
+  'minimize_active_window',
+  'maximize_active_window',
+  'show_desktop',
+  'task_view',
+  'open_explorer',
+  'volume_up',
+  'volume_down',
+  'volume_mute',
+] as const
+export type WindowsAction = (typeof WINDOWS_ACTIONS)[number]
 
 export type GestureAction = CodexAction | WindowsAction
 export type GestureMode = 'codex' | 'windows' | 'pointer'
@@ -88,14 +94,14 @@ export const CODEX_GESTURE_BINDINGS: Record<GestureName, GestureBinding> = {
 
 export const WINDOWS_GESTURE_BINDINGS: Record<GestureName, GestureBinding> = {
   Victory: {
-    action: 'task_view',
-    actionLabel: '打开任务视图',
+    action: 'switch_window',
+    actionLabel: '切换到下一个窗口',
     gestureLabel: '胜利手势',
     symbol: '✌',
   },
   Pointing_Up: {
-    action: 'volume_up',
-    actionLabel: '提高系统音量',
+    action: 'task_view',
+    actionLabel: '打开任务视图',
     gestureLabel: '食指向上',
     symbol: '☝',
   },
@@ -106,20 +112,20 @@ export const WINDOWS_GESTURE_BINDINGS: Record<GestureName, GestureBinding> = {
     symbol: '✋',
   },
   Thumb_Up: {
-    action: 'open_explorer',
-    actionLabel: '打开文件资源管理器',
+    action: 'maximize_active_window',
+    actionLabel: '最大化 / 还原当前窗口',
     gestureLabel: '竖起拇指',
     symbol: '👍',
   },
   ILoveYou: {
-    action: 'volume_down',
-    actionLabel: '降低系统音量',
+    action: 'switch_window_back',
+    actionLabel: '切换回上一个窗口',
     gestureLabel: 'I Love You 手势',
     symbol: '🤟',
   },
   Closed_Fist: {
-    action: 'volume_mute',
-    actionLabel: '静音 / 恢复声音',
+    action: 'minimize_active_window',
+    actionLabel: '最小化当前窗口',
     gestureLabel: '握拳',
     symbol: '✊',
   },
@@ -174,9 +180,8 @@ export function getGestureBindings(mode: GestureMode) {
 }
 
 export function isWindowsAction(action: GestureAction): action is WindowsAction {
-  return Object.values(WINDOWS_GESTURE_BINDINGS).some(
-    (binding) => binding.action === action,
-  )
+  // Speech commands remain Windows actions even without a fixed hand binding.
+  return WINDOWS_ACTIONS.some((candidate) => candidate === action)
 }
 
 export interface GestureMachineState {

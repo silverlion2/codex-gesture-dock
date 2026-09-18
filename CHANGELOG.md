@@ -6,6 +6,8 @@ All notable changes to Codex Gesture Dock are documented here.
 
 ### Added
 
+- One-click minimal Windows gesture control, foreground window switching,
+  minimize/maximize actions, and action-result callback feedback.
 - A public code-signing policy and a SignPath Foundation onboarding path for
   HSM-backed Authenticode releases without repository-stored private keys.
 - Live and file-based QR/barcode scanning, batch result export, and local QR

@@ -22,8 +22,18 @@ const WINDOWS_ACTION_LABELS = Object.freeze({
   volume_up: '\u5df2\u63d0\u9ad8\u7cfb\u7edf\u97f3\u91cf',
   volume_down: '\u5df2\u964d\u4f4e\u7cfb\u7edf\u97f3\u91cf',
   volume_mute: '\u5df2\u5207\u6362\u7cfb\u7edf\u9759\u97f3',
+  switch_window: '\u5df2\u5207\u6362\u5230\u4e0b\u4e00\u4e2a\u7a97\u53e3',
+  switch_window_back: '\u5df2\u5207\u6362\u5230\u4e0a\u4e00\u4e2a\u7a97\u53e3',
+  minimize_active_window: '\u5df2\u6700\u5c0f\u5316\u5f53\u524d\u7a97\u53e3',
+  maximize_active_window: '\u5df2\u5207\u6362\u5f53\u524d\u7a97\u53e3\u7684\u6700\u5927\u5316\u72b6\u6001',
+  snap_left: '\u5df2\u5c06\u5f53\u524d\u7a97\u53e3\u9760\u5de6',
+  snap_right: '\u5df2\u5c06\u5f53\u524d\u7a97\u53e3\u9760\u53f3',
 })
 const WINDOWS_ACTIONS = new Set(Object.keys(WINDOWS_ACTION_LABELS))
+const NATIVE_WINDOW_ACTIONS = new Set([
+  'minimize_active_window',
+  'maximize_active_window',
+])
 const SAFE_NAMED_CONTROL_TYPES = new Set([
   'Button',
   'CheckBox',
@@ -132,6 +142,7 @@ class WindowsControlCore {
     resolveScriptPath,
     powershellPath = getWindowsPowerShellPath(),
     onAudit,
+    onEvent,
     now = () => Date.now(),
   } = {}) {
     if (typeof resolveScriptPath !== 'function') {
@@ -142,6 +153,7 @@ class WindowsControlCore {
     this.resolveScriptPath = resolveScriptPath
     this.powershellPath = assertWindowsPowerShellPath(powershellPath)
     this.onAudit = typeof onAudit === 'function' ? onAudit : () => {}
+    this.onEvent = typeof onEvent === 'function' ? onEvent : () => {}
     this.now = now
     this.enabled = true
     this.monitorStatus = emptyMonitorStatus()
@@ -255,20 +267,26 @@ class WindowsControlCore {
         message: 'Windows 控制核心拒绝了未列入白名单的动作',
       }
       this.#audit('action', { programId, action, ok: false, reason: 'not-allowlisted' })
+      this.#emitActionEvent(programId, result)
       return result
     }
 
     if (!this.enabled) {
       const result = { ok: false, action, message: 'Windows 桌面控制已暂停' }
       this.#audit('action', { programId, action, ok: false, reason: 'emergency-stop' })
+      this.#emitActionEvent(programId, result)
       return result
     }
 
     if (programId === 'windows') {
-      const { error, stdout } = await this.#runScript('windows-system-control.ps1', [
+      const args = [
         '-Action',
         action,
-      ])
+      ]
+      if (NATIVE_WINDOW_ACTIONS.has(action)) {
+        args.push('-ExcludedProcessId', String(process.pid))
+      }
+      const { error, stdout } = await this.#runScript('windows-system-control.ps1', args)
       let scriptResult = {}
       if (!error) {
         try { scriptResult = JSON.parse(String(stdout).trim()) } catch { }
@@ -276,8 +294,15 @@ class WindowsControlCore {
       const validResult =
         !error &&
         scriptResult.ok === true &&
+        scriptResult.dryRun === false &&
         scriptResult.action === action &&
-        scriptResult.backend === 'fixed-system-key'
+        scriptResult.backend === (
+          NATIVE_WINDOW_ACTIONS.has(action) ? 'win32-window' : 'send-input'
+        ) &&
+        Number.isInteger(scriptResult.requested) &&
+        scriptResult.requested > 0 &&
+        Number.isInteger(scriptResult.sent) &&
+        scriptResult.sent === scriptResult.requested
       if (!validResult) {
         this.#audit('action', {
           programId,
@@ -285,19 +310,24 @@ class WindowsControlCore {
           ok: false,
           reason: error ? 'execution-failed' : 'invalid-helper-result',
         })
-        return {
+        const result = {
           ok: false,
           action,
           message: '\u0057\u0069\u006e\u0064\u006f\u0077\u0073 \u7cfb\u7edf\u52a8\u4f5c\u6267\u884c\u5931\u8d25\uff0c\u5df2\u5b89\u5168\u53d6\u6d88',
         }
+        this.#emitActionEvent(programId, result)
+        return result
       }
       const result = {
         ok: true,
         action,
-        backend: 'fixed-system-key',
+        backend: scriptResult.backend,
+        requested: scriptResult.requested,
+        sent: scriptResult.sent,
         message: WINDOWS_ACTION_LABELS[action],
       }
       this.#audit('action', { programId, action, ok: true, backend: result.backend })
+      this.#emitActionEvent(programId, result)
       return result
     }
 
@@ -315,11 +345,13 @@ class WindowsControlCore {
           ok: false,
           reason: 'invalid-helper-result',
         })
-        return {
+        const result = {
           ok: false,
           action,
           message: 'Codex 控制 helper 未返回可信身份结果，已取消动作',
         }
+        this.#emitActionEvent(programId, result)
+        return result
       }
       const result = {
         ok: true,
@@ -339,6 +371,7 @@ class WindowsControlCore {
         processId: result.processId,
         identityVerified: result.identityVerified,
       })
+      this.#emitActionEvent(programId, result)
       return result
     }
 
@@ -358,7 +391,9 @@ class WindowsControlCore {
       reason: exitCode === 5 ? 'identity-rejected' : 'execution-failed',
       exitCode,
     })
-    return { ok: false, action, message }
+    const result = { ok: false, action, message }
+    this.#emitActionEvent(programId, result)
+    return result
   }
 
   inspectProgram(programId) {
@@ -701,6 +736,19 @@ class WindowsControlCore {
         timestamp: new Date(this.now()).toISOString(),
         kind: cleanString(kind, 48),
         ...fields,
+      })
+    } catch { }
+  }
+
+  #emitActionEvent(programId, result) {
+    try {
+      this.onEvent({
+        type: 'action',
+        programId,
+        action: result.action,
+        ok: result.ok === true,
+        message: cleanString(result.message, 240),
+        timestamp: this.now(),
       })
     } catch { }
   }

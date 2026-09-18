@@ -2,6 +2,7 @@ import {
   Armchair,
   Camera,
   ChevronDown,
+  Hand,
   ListTodo,
   Maximize2,
   Mic,
@@ -168,6 +169,7 @@ function WidgetApp() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const toastTimerRef = useRef<number | null>(null)
   const microphoneTimerRef = useRef<number | null>(null)
+  const desktopActionTimerRef = useRef<number | null>(null)
   const [viewMode, setViewMode] = useState(initialWidgetViewMode)
   const [settings, setSettings] = useState(initialSettings)
   const [cameraMode, setCameraMode] = useState<CameraMode>('monitor')
@@ -183,6 +185,15 @@ function WidgetApp() {
   const [integrationStatus, setIntegrationStatus] =
     useState<CodexIntegrationStatus | null>(null)
   const [windowsControlBusy, setWindowsControlBusy] = useState(false)
+  const [desktopActionFeedback, setDesktopActionFeedback] = useState<{
+    message: string
+    ok: boolean
+  } | null>(null)
+  const [pointerControlReady, setPointerControlReady] = useState(false)
+  const lastActionToastRef = useRef<{ key: string; until: number }>({
+    key: '',
+    until: 0,
+  })
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<AppUpdateStatus | null>(null)
   const [voiceStatus, setVoiceStatus] = useState<VoiceControlStatus>(
@@ -197,6 +208,29 @@ function WidgetApp() {
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current)
     toastTimerRef.current = window.setTimeout(() => setToast(''), 5_000)
   }, [])
+
+  const showActionReminder = useCallback(
+    (action: string, ok: boolean, message: string) => {
+      const key = `${action}:${ok}:${message}`
+      if (
+        lastActionToastRef.current.key === key &&
+        Date.now() <= lastActionToastRef.current.until
+      ) {
+        return
+      }
+      lastActionToastRef.current = { key, until: Date.now() + 1_500 }
+      setDesktopActionFeedback({ message, ok })
+      if (desktopActionTimerRef.current !== null) {
+        window.clearTimeout(desktopActionTimerRef.current)
+      }
+      desktopActionTimerRef.current = window.setTimeout(
+        () => setDesktopActionFeedback(null),
+        1_500,
+      )
+      showReminder(message)
+    },
+    [showReminder],
+  )
 
   const changeViewMode = useCallback((nextMode: WidgetViewMode) => {
     setViewMode(nextMode)
@@ -343,7 +377,7 @@ function WidgetApp() {
               action,
               message: '请在 Windows 桌面版中使用系统手势控制',
             }
-        showReminder(result.message)
+        showActionReminder(result.action, result.ok, result.message)
         return result
       } catch (caught) {
         const result = {
@@ -352,12 +386,44 @@ function WidgetApp() {
           message:
             caught instanceof Error ? caught.message : 'Windows 控制桥暂时不可用',
         }
-        showReminder(result.message)
+        showActionReminder(result.action, result.ok, result.message)
         return result
       }
     },
-    [runCodexAction, showReminder],
+    [runCodexAction, showActionReminder],
   )
+
+  const startMinimalWindowsControl = useCallback(async () => {
+    setGestureMode('windows')
+    setSettings((current) => ({ ...current, gestureEnabled: true }))
+    setCameraMode('monitor')
+
+    try {
+      const controls = window.widgetControls
+      if (controls && integrationStatus?.control?.enabled === false) {
+        const status = await controls.setWindowsControlEnabled(true)
+        if (!status.enabled) throw new Error('Windows 桌面控制未能恢复')
+        await refreshIntegrationStatus()
+      }
+      if (!['loading', 'calibrating', 'monitoring'].includes(monitorPhase)) {
+        const started = await startMonitorSession()
+        if (!started) return
+      }
+      changeViewMode('minimal')
+      showReminder('极简 Windows 手势控制已启动')
+    } catch (caught) {
+      showReminder(
+        caught instanceof Error ? caught.message : '极简桌面控制启动失败',
+      )
+    }
+  }, [
+    changeViewMode,
+    integrationStatus?.control?.enabled,
+    monitorPhase,
+    refreshIntegrationStatus,
+    showReminder,
+    startMonitorSession,
+  ])
 
   const openTaskPicker = useCallback(() => {
     changeViewMode('expanded')
@@ -524,8 +590,9 @@ function WidgetApp() {
 
   const gestureBindings = getGestureBindings(gestureMode)
   const sendPointerCommand = useCallback((command: PointerCommand) => {
+    if (!pointerControlReady) return
     window.widgetControls?.sendPointerCommand(command)
-  }, [])
+  }, [pointerControlReady])
   const airPointerEnabled = shouldEnableAirPointer({
     approvalPending: Boolean(currentApproval),
     cameraMode,
@@ -540,7 +607,7 @@ function WidgetApp() {
     onAction: runGestureAction,
     onGesture: handleGesture,
     onPointerCommand: sendPointerCommand,
-    pointerMode: airPointerEnabled,
+    pointerMode: airPointerEnabled && pointerControlReady,
     videoRef,
   })
 
@@ -548,17 +615,31 @@ function WidgetApp() {
 
   useEffect(() => {
     const controls = window.widgetControls
-    if (!controls) return
+    if (!controls) {
+      setPointerControlReady(false)
+      return
+    }
     let disposed = false
-    void controls.setPointerControlEnabled(pointerControlRequested).catch((caught) => {
-      if (!disposed && pointerControlRequested) {
-        showReminder(
-          caught instanceof Error ? caught.message : '空中鼠标控制桥暂时不可用',
-        )
-      }
-    })
+    setPointerControlReady(false)
+    void controls.setPointerControlEnabled(pointerControlRequested)
+      .then((status) => {
+        if (!disposed) {
+          setPointerControlReady(pointerControlRequested && status.enabled)
+          if (pointerControlRequested && !status.enabled) {
+            showReminder(status.message)
+          }
+        }
+      })
+      .catch((caught) => {
+        if (!disposed && pointerControlRequested) {
+          showReminder(
+            caught instanceof Error ? caught.message : '空中鼠标控制桥暂时不可用',
+          )
+        }
+      })
     return () => {
       disposed = true
+      setPointerControlReady(false)
       if (pointerControlRequested) {
         void controls.setPointerControlEnabled(false).catch(() => {})
       }
@@ -652,8 +733,19 @@ function WidgetApp() {
     const removeIntegrationListener = controls.onCodexIntegrationChanged(() => {
       void refreshIntegrationStatus()
     })
-    const removeWindowsListener = controls.onWindowsControlEvent(() => {
-      void refreshIntegrationStatus()
+    const removeWindowsListener = controls.onWindowsControlEvent((event) => {
+      const isActionEvent =
+        event.kind === 'action' ||
+        event.type === 'action' ||
+        (typeof event.action === 'string' && typeof event.ok === 'boolean')
+      if (isActionEvent && event.action) {
+        const message = event.message ||
+          (event.ok ? `已完成 Windows 动作：${event.action}` : `Windows 动作失败：${event.action}`)
+        if (event.programId === 'windows' || !event.programId) {
+          showActionReminder(event.action, Boolean(event.ok), message)
+        }
+      }
+      if (!isActionEvent) void refreshIntegrationStatus()
     })
     const removeVoiceCommandListener = controls.onVoiceCommand(handleVoiceCommand)
     const removeVoiceStatusListener = controls.onVoiceControlStatus((status) => {
@@ -690,13 +782,22 @@ function WidgetApp() {
       removeUpdateListener()
       window.clearInterval(integrationTimer)
     }
-  }, [changeViewMode, handleVoiceCommand, refreshIntegrationStatus, showReminder])
+  }, [
+    changeViewMode,
+    handleVoiceCommand,
+    refreshIntegrationStatus,
+    showActionReminder,
+    showReminder,
+  ])
 
   useEffect(
     () => () => {
       if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current)
       if (microphoneTimerRef.current !== null) {
         window.clearTimeout(microphoneTimerRef.current)
+      }
+      if (desktopActionTimerRef.current !== null) {
+        window.clearTimeout(desktopActionTimerRef.current)
       }
     },
     [],
@@ -781,6 +882,7 @@ function WidgetApp() {
       className={`widget-root ${expanded ? 'is-expanded' : 'is-collapsed'} ${screenUsageMinimized ? 'is-minimal' : ''} ${sessionActive ? 'has-active-camera' : ''} ${audioPhase === 'active' ? 'has-active-audio' : ''}`}
     >
       <FloatingButton
+        actionFeedback={desktopActionFeedback}
         hidden={!screenUsageMinimized}
         gestureActive={settings.gestureEnabled && gesture.modelPhase === 'ready'}
         phase={monitor.phase}
@@ -849,6 +951,14 @@ function WidgetApp() {
               onClick={openDashboard}
             >
               <Maximize2 size={17} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              aria-label="一键启动极简 Windows 桌面手势控制"
+              title="启动摄像头、校准并进入极简 Windows 手势控制"
+              onClick={() => void startMinimalWindowsControl()}
+            >
+              <Hand size={18} aria-hidden="true" />
             </button>
             <button
               className="expanded-only"

@@ -102,6 +102,7 @@ const desktopAutoUpdater = new DesktopAutoUpdater({
 const windowsControl = new WindowsControlCore({
   resolveScriptPath: getDesktopScriptPath,
   onAudit: appendWindowsControlAudit,
+  onEvent: handleWindowsControlEvent,
 })
 const voiceControl = new WindowsVoiceControl({
   resolveScriptPath: getDesktopScriptPath,
@@ -516,6 +517,8 @@ function setWidgetViewMode(nextMode) {
   )
   widgetWindow.setResizable(expanded)
   widgetWindow.setBounds(storedBounds ?? getAnchoredBounds(size), true)
+  widgetWindow.setFocusable(widgetViewMode !== 'minimal')
+  if (widgetViewMode === 'minimal') widgetWindow.blur()
   widgetWindow.webContents.send('widget:state-changed', expanded)
   widgetWindow.webContents.send('widget:view-mode-changed', widgetViewMode)
   return widgetViewMode
@@ -1362,6 +1365,7 @@ function createWidgetWindow() {
             )
             await new Promise((resolve) => setTimeout(resolve, 150))
             const minimalBounds = widgetWindow.getBounds()
+            const minimalFocusable = widgetWindow.isFocusable()
             const minimalLayout = await widgetWindow.webContents.executeJavaScript(`
               (() => {
                 const root = document.querySelector('.widget-root')
@@ -1382,6 +1386,7 @@ function createWidgetWindow() {
             const restoredExpanded = await widgetWindow.webContents.executeJavaScript(
               "document.querySelector('.widget-root')?.classList.contains('is-expanded') === true",
             )
+            const restoredFocusable = widgetWindow.isFocusable()
             const taskPickerVisible = await taskWindow.webContents.executeJavaScript(`
               Boolean(document.querySelector('.task-window-root .task-picker'))
             `)
@@ -1420,7 +1425,9 @@ function createWidgetWindow() {
               Math.abs(minimalBounds.height - MINIMAL_SIZE.height) <= 2 &&
               minimalLayout.minimal &&
               minimalLayout.restoreVisible &&
+              !minimalFocusable &&
               restoredExpanded &&
+              restoredFocusable &&
               safety.paused &&
               safety.actionBlocked &&
               safety.windowsActionBlocked &&
@@ -1442,8 +1449,10 @@ function createWidgetWindow() {
                 ...safety,
                 minimalMode,
                 minimalBounds,
+                minimalFocusable,
                 ...minimalLayout,
                 restoredExpanded,
+                restoredFocusable,
                 taskPickerVisible,
                 dashboardScreenshot,
                 taskPickerScreenshot,
