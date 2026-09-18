@@ -13,7 +13,7 @@ $previewRoot = Join-Path $artifactRoot 'preview'
 if (Test-Path -LiteralPath $previewRoot) { throw 'Refusing to overwrite an existing preview bundle.' }
 $sourceManifest = Get-Content (Join-Path $artifactRoot 'release-assets.json') -Raw | ConvertFrom-Json
 if ($sourceManifest.version -ne $version) { throw 'Source manifest version mismatch.' }
-$names = @("Codex-Gesture-Dock-$version-setup.exe", "Codex-Gesture-Dock-$version-portable.exe", 'sbom.cdx.json')
+$names = @("Codex-Gesture-Dock-$version-setup.exe", "Codex-Gesture-Dock-$version-portable.exe", "Codex-Gesture-Dock-$version-setup.exe.blockmap", 'latest.yml', 'sbom.cdx.json')
 $assets = foreach ($name in $names) {
   $file = Get-Item -LiteralPath (Join-Path $artifactRoot $name)
   if ($file.Length -le 0) { throw "Empty preview asset: $name" }
@@ -31,11 +31,14 @@ foreach ($name in $names) {
 $manifest = [ordered]@{
   schemaVersion = 1
   version = $version
-  tag = "preview/v$version"
+  # Plain semver is understood by electron-updater and does not trigger the
+  # separate signed production workflow's v* tag filter.
+  tag = "$version"
   commit = $env:GITHUB_SHA
   buildRun = "https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
   unsigned = $true
-  manualDownloadOnly = $true
+  manualDownloadOnly = $false
+  updateChannel = 'all-releases'
   assets = @($assets)
 }
 $manifestPath = Join-Path $previewRoot 'preview-release.json'
@@ -46,4 +49,4 @@ $checksums = foreach ($name in $checksumNames) {
   "$hash  $name"
 }
 $checksums | Set-Content -LiteralPath (Join-Path $previewRoot 'SHA256SUMS.txt') -Encoding ascii
-Write-Output "Prepared five unsigned preview files for $($manifest.tag); no updater feed or blockmap."
+Write-Output "Prepared seven unsigned release files for $($manifest.tag), including verified updater metadata."

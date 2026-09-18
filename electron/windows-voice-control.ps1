@@ -72,8 +72,8 @@ try {
     $commands[(U '\u52a9\u624b \u6253\u5f00\u4efb\u52a1')] = 'open_task_picker'
     $commands[(U '\u52a9\u624b \u5f00\u59cb\u76d1\u6d4b')] = 'start_monitoring'
     $commands[(U '\u52a9\u624b \u505c\u6b62\u76d1\u6d4b')] = 'stop_monitoring'
-    $commands[(U '\u52a9\u624b \u6700\u5c0f\u5316\u7a97\u53e3')] = 'minimize_window'
-    $commands[(U '\u52a9\u624b \u6062\u590d\u7a97\u53e3')] = 'restore_window'
+    $commands[(U '\u52a9\u624b \u7f29\u5c0f\u60ac\u6d6e\u7a97')] = 'minimize_window'
+    $commands[(U '\u52a9\u624b \u6062\u590d\u60ac\u6d6e\u7a97')] = 'restore_window'
     $commands[(U '\u52a9\u624b \u663e\u793a\u684c\u9762')] = 'show_desktop'
     $commands[(U '\u52a9\u624b \u4efb\u52a1\u89c6\u56fe')] = 'task_view'
     $commands[(U '\u52a9\u624b \u6253\u5f00\u8d44\u6e90\u7ba1\u7406\u5668')] = 'open_explorer'
@@ -81,6 +81,12 @@ try {
     $commands[(U '\u52a9\u624b \u97f3\u91cf\u51cf\u5c0f')] = 'volume_down'
     $commands[(U '\u52a9\u624b \u9759\u97f3')] = 'volume_mute'
     $commands[(U '\u52a9\u624b \u5173\u95ed\u8bed\u97f3')] = 'disable_voice_commands'
+    $commands[(U '\u52a9\u624b \u5207\u6362\u7a97\u53e3')] = 'switch_window'
+    $commands[(U '\u52a9\u624b \u4e0a\u4e00\u4e2a\u7a97\u53e3')] = 'switch_window_back'
+    $commands[(U '\u52a9\u624b \u6700\u5c0f\u5316\u7a97\u53e3')] = 'minimize_active_window'
+    $commands[(U '\u52a9\u624b \u6700\u5927\u5316\u7a97\u53e3')] = 'maximize_active_window'
+    $commands[(U '\u52a9\u624b \u6682\u505c\u63a7\u5236')] = 'pause_windows_control'
+    $commands[(U '\u52a9\u624b \u5f00\u542f\u624b\u52bf')] = 'start_windows_gestures'
   } else {
     $commands = [ordered]@{
       'codex open quick chat' = 'quick_chat'
@@ -93,8 +99,8 @@ try {
       'codex open tasks' = 'open_task_picker'
       'codex start monitoring' = 'start_monitoring'
       'codex stop monitoring' = 'stop_monitoring'
-      'codex minimize window' = 'minimize_window'
-      'codex restore window' = 'restore_window'
+      'codex shrink widget' = 'minimize_window'
+      'codex restore widget' = 'restore_window'
       'codex show desktop' = 'show_desktop'
       'codex task view' = 'task_view'
       'codex open explorer' = 'open_explorer'
@@ -102,6 +108,12 @@ try {
       'codex volume down' = 'volume_down'
       'codex mute volume' = 'volume_mute'
       'codex disable voice' = 'disable_voice_commands'
+      'codex switch window' = 'switch_window'
+      'codex previous window' = 'switch_window_back'
+      'codex minimize window' = 'minimize_active_window'
+      'codex maximize window' = 'maximize_active_window'
+      'codex pause Windows control' = 'pause_windows_control'
+      'codex start Windows gestures' = 'start_windows_gestures'
     }
   }
 
@@ -112,9 +124,10 @@ try {
   $builder.Append($choices)
   $grammar = New-Object System.Speech.Recognition.Grammar($builder)
   $grammar.Name = 'Codex Gesture Dock fixed voice commands'
-  # The parameterless constructor uses the Windows default in-process recognizer.
-  # Some Windows images enumerate recognizer IDs that cannot be reopened directly.
-  $engine = New-Object System.Speech.Recognition.SpeechRecognitionEngine
+  $engine = [System.Speech.Recognition.SpeechRecognitionEngine]::new($recognizerInfo)
+  if ($null -eq $engine.RecognizerInfo -or $engine.RecognizerInfo.Culture.Name -ne $recognizerInfo.Culture.Name) {
+    throw 'Selected recognizer culture does not match engine culture.'
+  }
   $engine.LoadGrammar($grammar)
 
   if ($Probe) {

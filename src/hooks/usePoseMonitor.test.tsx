@@ -145,4 +145,35 @@ describe('usePoseMonitor camera loop', () => {
       audio: false,
     })
   })
+
+  it('starts a gesture-only camera session without loading posture or calibration', async () => {
+    const video = document.createElement('video')
+    Object.defineProperties(video, {
+      play: { configurable: true, value: vi.fn(async () => undefined) },
+      readyState: {
+        configurable: true,
+        get: () => HTMLMediaElement.HAVE_CURRENT_DATA,
+      },
+    })
+    const createFromOptions = vi.mocked(
+      (await import('@mediapipe/tasks-vision')).PoseLandmarker.createFromOptions,
+    )
+    createFromOptions.mockClear()
+    const { result, unmount } = renderHook(() =>
+      usePoseMonitor({
+        videoRef: { current: video },
+        canvasRef: { current: null },
+        settings,
+        onReminder: vi.fn(),
+      }),
+    )
+
+    await act(async () =>
+      result.current.startSession(undefined, { posture: false })
+    )
+
+    expect(result.current.phase).toBe('monitoring')
+    expect(createFromOptions).not.toHaveBeenCalled()
+    unmount()
+  })
 })

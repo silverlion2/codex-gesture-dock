@@ -23,6 +23,12 @@ const VOICE_COMMAND_ACTIONS = new Set([
   'stop_monitoring',
   'minimize_window',
   'restore_window',
+  'switch_window',
+  'switch_window_back',
+  'minimize_active_window',
+  'maximize_active_window',
+  'pause_windows_control',
+  'start_windows_gestures',
   'disable_voice_commands',
 ])
 const VOICE_COMMAND_RATE_LIMIT_MS = 900

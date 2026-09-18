@@ -37,7 +37,7 @@
 | [postured](https://github.com/vadi2/postured) | 低干扰托盘交互、仅在需要时提醒、低 CPU 目标 | 面向 Linux 且功能更窄；验证了“后台轻量、异常时提示”的产品方向 |
 | [GestureX](https://gesturex.app/) | 手势到媒体、演示与桌面动作的明确映射 | 更偏通用控制；本项目保留固定白名单、保持确认和松手复位，避免误触及任意命令执行 |
 
-Google 的 [MediaPipe Web Gesture Recognizer 指南](https://developers.google.com/edge/mediapipe/solutions/vision/gesture_recognizer/web_js) 明确指出视频识别会同步阻塞主线程。基于这次复查，姿态循环采用 10 FPS 上限，并在视频暂时未就绪时继续调度以自动恢复；手势循环继续使用独立的 135 ms 间隔和保持状态机。后续若实测仍有明显卡顿，再将两个识别器迁移到 Web Worker，而不是继续提高主线程采样率。
+Google 的 [MediaPipe Web Gesture Recognizer 指南](https://developers.google.com/edge/mediapipe/solutions/vision/gesture_recognizer/web_js) 明确指出视频识别会同步阻塞主线程，因此当前实现把视觉推理迁移到 worker，并保留有界调度与失败恢复。Windows/Codex 动作使用连续保持确认；空中鼠标使用 [One Euro Filter](https://gery.casiez.net/1euro/) 的自适应平滑，在低速时稳定、快速移动时降低延迟。两者都是工程控制手段，不构成人类手势准确率已通过的证明。
 
 ### 多功能摄像头扩展选型
 

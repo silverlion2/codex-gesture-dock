@@ -4,6 +4,15 @@ All notable changes to Codex Gesture Dock are documented here.
 
 ## [Unreleased]
 
+### 0.6.1 — Windows-first gestures and offline voice
+
+- Start minimal Windows gestures directly from the camera without posture-model calibration; wait for actual gesture readiness before collapsing.
+- Stop inference on recognizer runtime failures and surface rejected action callbacks.
+- Accept newer preview and stable releases without downgrades. Publish verified installer metadata and blockmaps on ordinary semver preview tags; legacy clients need one manual bootstrap installation.
+- Add real-camera/minimal-mode acceptance and owned-window tests against the production Windows helper. These checks do not claim human gesture accuracy or trusted Authenticode signing.
+- Make Windows v2 the default gesture mode; isolate MediaPipe hand recognition in a worker, require continuous-hold confirmation, and use adaptive One Euro smoothing for air-pointer input. Human camera/gesture acceptance remains pending.
+- Expand offline local voice control to 25 fixed Chinese/English commands, with explicit widget-vs-foreground-window wording and Windows control pause/start intents. Voice and microphone human acceptance remains pending.
+
 ### Added
 
 - One-click minimal Windows gesture control, foreground window switching,
@@ -29,7 +38,7 @@ All notable changes to Codex Gesture Dock are documented here.
 - English and Chinese project descriptions plus a commit-linked development log.
 - An opt-in air-pointer mode for index-finger cursor movement, pinch click, and
   open-palm scrolling, guarded by the existing Windows emergency stop.
-- Opt-in, session-only local Windows speech control with 19 fixed Chinese or
+- Opt-in, session-only local Windows speech control with 25 fixed Chinese or
   English wake-word commands, bounded IPC, rate limits, startup timeout, and
   no free dictation, audio storage, network recognition, or approval actions.
 

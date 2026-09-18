@@ -36,6 +36,11 @@ function renderControls(
 }
 
 describe('MiniCameraControls', () => {
+  it('labels camera-only operation without a posture score', () => {
+    renderControls({ phase: 'monitoring', postureActive: false, score: 91 })
+    expect(screen.getByText('仅手势控制，坐姿监测未启用')).toBeTruthy()
+    expect(screen.queryByText('91')).toBeNull()
+  })
   it('starts the camera from the compact posture view', () => {
     const props = renderControls()
 

@@ -1,4 +1,3 @@
-import type { GestureRecognizer } from '@mediapipe/tasks-vision'
 import {
   useCallback,
   useEffect,
@@ -23,7 +22,7 @@ import {
   type PointerActivity,
   type PointerCommand,
 } from '../lib/pointerGestures'
-import { loadVisionRuntime } from '../lib/visionRuntime'
+import { createGestureRecognizerClient } from '../lib/gestureRecognizerClient'
 
 export type GestureModelPhase = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -35,6 +34,7 @@ export interface GestureViewState {
   gesture: GestureName | null
   modelPhase: GestureModelPhase
   progress: number
+  processedFrames?: number
   pointerActivity?: PointerActivity
 }
 
@@ -61,6 +61,7 @@ const idleView: GestureViewState = {
   modelPhase: 'idle',
   pointerActivity: 'idle',
   progress: 0,
+  processedFrames: 0,
 }
 
 function stableView(next: GestureViewState): GestureViewState {
@@ -81,6 +82,7 @@ function sameView(left: GestureViewState, right: GestureViewState) {
     left.modelPhase === right.modelPhase &&
     left.pointerActivity === right.pointerActivity &&
     left.progress === right.progress
+    && (left.processedFrames ?? 0) === (right.processedFrames ?? 0)
   )
 }
 
@@ -96,8 +98,8 @@ export function useGestureControl({
 }: UseGestureControlOptions) {
   const [view, setView] = useState<GestureViewState>(idleView)
   const viewRef = useRef<GestureViewState>(idleView)
-  const recognizerRef = useRef<GestureRecognizer | null>(null)
-  const loadingRef = useRef<Promise<GestureRecognizer> | null>(null)
+  const recognizerRef = useRef<ReturnType<typeof createGestureRecognizerClient> | null>(null)
+  const loadingRef = useRef<Promise<ReturnType<typeof createGestureRecognizerClient>> | null>(null)
   const frameRef = useRef<number | null>(null)
   const lastInferenceRef = useRef(0)
   const lastVideoTimeRef = useRef(-1)
@@ -107,6 +109,9 @@ export function useGestureControl({
     activity: 'idle',
     until: 0,
   })
+  const processedFramesRef = useRef(0)
+  const visibilityEpochRef = useRef(0)
+  const inferenceBusyRef = useRef(false)
 
   const publishView = useCallback((nextView: GestureViewState) => {
     const next = stableView(nextView)
@@ -116,38 +121,30 @@ export function useGestureControl({
   }, [])
 
   const loadRecognizer = useCallback(async () => {
-    if (recognizerRef.current) return recognizerRef.current
     if (loadingRef.current) return loadingRef.current
+    if (recognizerRef.current) return recognizerRef.current
 
-    const wasmRoot = new URL('./wasm/', window.location.href).toString()
-    const modelPath = new URL(
-      './models/gesture_recognizer.task',
-      window.location.href,
-    ).toString()
-
-    loadingRef.current = (async () => {
-      const { FilesetResolver, GestureRecognizer } = await loadVisionRuntime()
-      const vision = await FilesetResolver.forVisionTasks(wasmRoot)
-      const recognizer = await GestureRecognizer.createFromOptions(vision, {
-        baseOptions: { modelAssetPath: modelPath },
-        runningMode: 'VIDEO',
-        numHands: 1,
-        minHandDetectionConfidence: 0.58,
-        minHandPresenceConfidence: 0.58,
-        minTrackingConfidence: 0.55,
-        cannedGesturesClassifierOptions: {
-          scoreThreshold: 0.68,
-          categoryAllowlist: Object.keys(CODEX_GESTURE_BINDINGS),
-        },
+    const loading = (async () => {
+      const recognizer = createGestureRecognizerClient({
+        wasmRoot: new URL('./wasm/', window.location.href).toString(),
+        modelAssetPath: new URL('./models/gesture_recognizer.task', window.location.href).toString(),
       })
       recognizerRef.current = recognizer
+      try {
+        await recognizer.initialize()
+      } catch (error) {
+        recognizer.close()
+        if (recognizerRef.current === recognizer) recognizerRef.current = null
+        throw error
+      }
       return recognizer
     })()
+    loadingRef.current = loading
 
     try {
-      return await loadingRef.current
+      return await loading
     } finally {
-      loadingRef.current = null
+      if (loadingRef.current === loading) loadingRef.current = null
     }
   }, [])
 
@@ -163,14 +160,19 @@ export function useGestureControl({
     }
 
     let cancelled = false
+    visibilityEpochRef.current += 1
     const handleVisibilityChange = () => {
       if (!document.hidden) return
+      visibilityEpochRef.current += 1
       machineRef.current = { ...initialGestureMachineState }
       pointerStateRef.current = disarmAirPointerState(pointerStateRef.current)
       pointerUiRef.current = { activity: 'idle', until: 0 }
       lastVideoTimeRef.current = -1
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
+    lastInferenceRef.current = 0
+    lastVideoTimeRef.current = -1
+    processedFramesRef.current = 0
     publishView({ ...idleView, modelPhase: 'loading' })
 
     const begin = async () => {
@@ -179,7 +181,7 @@ export function useGestureControl({
         if (cancelled) return
         publishView({ ...idleView, modelPhase: 'ready' })
 
-        const detect = () => {
+        const detect = async () => {
           if (cancelled) return
           const video = videoRef.current
           const now = performance.now()
@@ -187,6 +189,7 @@ export function useGestureControl({
 
           if (
             !document.hidden &&
+            !inferenceBusyRef.current &&
             video &&
             video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
             video.currentTime !== lastVideoTimeRef.current &&
@@ -194,72 +197,112 @@ export function useGestureControl({
           ) {
             lastVideoTimeRef.current = video.currentTime
             lastInferenceRef.current = now
-            const result = recognizer.recognizeForVideo(video, now)
-            const category = result.gestures[0]?.[0]
-            if (pointerMode) {
-              const pointerResult = advanceAirPointer(pointerStateRef.current, {
-                confidence: category?.score ?? 0,
-                gesture: category?.categoryName ?? null,
-                landmarks: (result.landmarks[0] as HandLandmark[] | undefined) ?? null,
-                now,
-              })
-              pointerStateRef.current = pointerResult.state
-              for (const command of pointerResult.commands) onPointerCommand?.(command)
-              if (
-                pointerResult.activity === 'clicking' ||
-                pointerResult.activity === 'scrolling-up' ||
-                pointerResult.activity === 'scrolling-down'
-              ) {
-                pointerUiRef.current = {
-                  activity: pointerResult.activity,
-                  until: now + 420,
-                }
-              } else if (now >= pointerUiRef.current.until) {
-                pointerUiRef.current = { activity: pointerResult.activity, until: 0 }
+            const frameEpoch = visibilityEpochRef.current
+            inferenceBusyRef.current = true
+            try {
+              const bitmap = await createImageBitmap(video)
+              if (cancelled || document.hidden || frameEpoch !== visibilityEpochRef.current) {
+                bitmap.close()
+                if (!cancelled) frameRef.current = requestAnimationFrame(() => void detect())
+                return
               }
-              const recognized = category?.categoryName
+              const result = await recognizer.detect(bitmap, now)
+              if (cancelled || document.hidden || frameEpoch !== visibilityEpochRef.current) {
+                if (!cancelled) frameRef.current = requestAnimationFrame(() => void detect())
+                return
+              }
+              const category = result.gestures[0]?.[0]
+              if (pointerMode) {
+                processedFramesRef.current += 1
+                const pointerResult = advanceAirPointer(pointerStateRef.current, {
+                  confidence: category?.score ?? 0,
+                  gesture: category?.categoryName ?? null,
+                  landmarks: (result.landmarks[0] as HandLandmark[] | undefined) ?? null,
+                  now,
+                })
+                pointerStateRef.current = pointerResult.state
+                for (const command of pointerResult.commands) onPointerCommand?.(command)
+                if (
+                  pointerResult.activity === 'clicking' ||
+                  pointerResult.activity === 'scrolling-up' ||
+                  pointerResult.activity === 'scrolling-down'
+                ) {
+                  pointerUiRef.current = {
+                    activity: pointerResult.activity,
+                    until: now + 420,
+                  }
+                } else if (now >= pointerUiRef.current.until) {
+                  pointerUiRef.current = { activity: pointerResult.activity, until: 0 }
+                }
+                const recognized = category?.categoryName
+                publishView({
+                  ...idleView,
+                  gesture:
+                    recognized && recognized in CODEX_GESTURE_BINDINGS
+                      ? recognized as GestureName
+                      : null,
+                  modelPhase: 'ready',
+                  pointerActivity: pointerUiRef.current.activity,
+                  processedFrames: processedFramesRef.current,
+                })
+                frameRef.current = requestAnimationFrame(detect)
+                return
+              }
+              const machineResult = advanceGestureMachine(machineRef.current, {
+                name: category?.categoryName ?? null,
+                confidence: category?.score ?? 0,
+                now,
+              }, bindings)
+              machineRef.current = machineResult.state
+              processedFramesRef.current += 1
+
               publishView({
-                ...idleView,
-                gesture:
-                  recognized && recognized in CODEX_GESTURE_BINDINGS
-                    ? recognized as GestureName
-                    : null,
+                awaitingNeutral: machineResult.state.awaitingNeutral,
+                binding: machineResult.binding,
+                confidence: category?.score ?? 0,
+                error: '',
+                gesture: machineResult.state.candidate,
                 modelPhase: 'ready',
-                pointerActivity: pointerUiRef.current.activity,
+                pointerActivity: 'idle',
+                progress: machineResult.state.progress,
+                processedFrames: processedFramesRef.current,
               })
-              frameRef.current = requestAnimationFrame(detect)
+
+              const handled = machineResult.gesture
+                ? onGesture?.(machineResult.gesture) ?? false
+                : false
+              if (machineResult.action && !handled) {
+                void Promise.resolve(onAction(machineResult.action)).catch((caught) => {
+                  if (cancelled) return
+                  publishView({
+                    ...viewRef.current,
+                    error:
+                      caught instanceof Error ? caught.message : '手势动作执行失败',
+                  })
+                })
+              }
+            } catch (caught) {
+              frameRef.current = null
+              recognizer.close()
+              if (recognizerRef.current === recognizer) recognizerRef.current = null
+              if (!cancelled) {
+                publishView({
+                  ...viewRef.current,
+                  modelPhase: 'error',
+                  error:
+                    caught instanceof Error ? caught.message : '手势识别运行失败',
+                })
+              }
               return
-            }
-            const machineResult = advanceGestureMachine(machineRef.current, {
-              name: category?.categoryName ?? null,
-              confidence: category?.score ?? 0,
-              now,
-            }, bindings)
-            machineRef.current = machineResult.state
-
-            publishView({
-              awaitingNeutral: machineResult.state.awaitingNeutral,
-              binding: machineResult.binding,
-              confidence: category?.score ?? 0,
-              error: '',
-              gesture: machineResult.state.candidate,
-              modelPhase: 'ready',
-              pointerActivity: 'idle',
-              progress: machineResult.state.progress,
-            })
-
-            const handled = machineResult.gesture
-              ? onGesture?.(machineResult.gesture) ?? false
-              : false
-            if (machineResult.action && !handled) {
-              void onAction(machineResult.action)
+            } finally {
+              inferenceBusyRef.current = false
             }
           }
 
-          frameRef.current = requestAnimationFrame(detect)
+          if (!cancelled) frameRef.current = requestAnimationFrame(() => void detect())
         }
 
-        frameRef.current = requestAnimationFrame(detect)
+        frameRef.current = requestAnimationFrame(() => void detect())
       } catch (caught) {
         if (cancelled) return
         publishView({
@@ -280,6 +323,9 @@ export function useGestureControl({
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
       frameRef.current = null
+      lastInferenceRef.current = 0
+      lastVideoTimeRef.current = -1
+      processedFramesRef.current = 0
       machineRef.current = { ...initialGestureMachineState }
       pointerStateRef.current = { ...initialAirPointerState }
       pointerUiRef.current = { activity: 'idle', until: 0 }
@@ -301,6 +347,8 @@ export function useGestureControl({
     () => () => {
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
       recognizerRef.current?.close()
+      recognizerRef.current = null
+      loadingRef.current = null
     },
     [],
   )

@@ -52,6 +52,8 @@ import type {
 } from './lib/codexApprovals'
 import type { CodexIntegrationStatus } from './lib/codexIntegration'
 import type { AppUpdateStatus } from './lib/appUpdate'
+import { useMinimalGestureReadiness } from './hooks/useMinimalGestureReadiness'
+import { loadGestureMode, saveGestureMode } from './lib/gesturePreferences'
 import type { WidgetViewMode } from './electron'
 import type { CameraMode } from './lib/cameraTools'
 import type { FaceMaskStyle } from './lib/faceMasks'
@@ -121,17 +123,6 @@ const initialSettings: ReminderSettings = {
   gestureEnabled: true,
 }
 
-const GESTURE_MODE_STORAGE_KEY = 'codex-gesture-dock.gesture-mode.v1'
-
-function initialGestureMode(): GestureMode {
-  try {
-    const stored = window.localStorage.getItem(GESTURE_MODE_STORAGE_KEY)
-    return stored === 'windows' || stored === 'pointer' ? stored : 'codex'
-  } catch {
-    return 'codex'
-  }
-}
-
 function initialWidgetViewMode(): WidgetViewMode {
   const requestedMode = new URLSearchParams(window.location.search).get('widget')
   if (requestedMode === 'minimal' || requestedMode === 'collapsed') {
@@ -170,12 +161,13 @@ function WidgetApp() {
   const toastTimerRef = useRef<number | null>(null)
   const microphoneTimerRef = useRef<number | null>(null)
   const desktopActionTimerRef = useRef<number | null>(null)
+  const minimalWindowsStartRef = useRef(false)
   const [viewMode, setViewMode] = useState(initialWidgetViewMode)
   const [settings, setSettings] = useState(initialSettings)
   const [cameraMode, setCameraMode] = useState<CameraMode>('monitor')
   const [faceMaskStyle, setFaceMaskStyle] = useState<FaceMaskStyle>('fox')
   const [mediaPreferences, setMediaPreferences] = useState(loadMediaPreferences)
-  const [gestureMode, setGestureMode] = useState<GestureMode>(initialGestureMode)
+  const [gestureMode, setGestureMode] = useState<GestureMode>(loadGestureMode)
   const [taskPickerOpen, setTaskPickerOpen] = useState(false)
   const [approvalQueue, setApprovalQueue] =
     useState<CodexApprovalRequest[]>(initialApprovalQueue)
@@ -185,11 +177,14 @@ function WidgetApp() {
   const [integrationStatus, setIntegrationStatus] =
     useState<CodexIntegrationStatus | null>(null)
   const [windowsControlBusy, setWindowsControlBusy] = useState(false)
+  const [minimalWindowsStarting, setMinimalWindowsStarting] = useState(false)
+  const [minimalWindowsPending, setMinimalWindowsPending] = useState(false)
   const [desktopActionFeedback, setDesktopActionFeedback] = useState<{
     message: string
     ok: boolean
   } | null>(null)
   const [pointerControlReady, setPointerControlReady] = useState(false)
+  const minimalWindowsPendingRef = useRef(false)
   const lastActionToastRef = useRef<{ key: string; until: number }>({
     key: '',
     until: 0,
@@ -271,21 +266,21 @@ function WidgetApp() {
       setWindowsControlBusy(true)
       try {
         const status = await controls.setWindowsControlEnabled(enabled)
-        showReminder(
+        showActionReminder('windows-control', true,
           status.enabled
             ? 'Windows 桌面控制已恢复'
             : 'Windows 桌面控制已暂停',
         )
         await refreshIntegrationStatus()
       } catch (caught) {
-        showReminder(
+        showActionReminder('windows-control', false,
           caught instanceof Error ? caught.message : 'Windows 控制状态切换失败',
         )
       } finally {
         setWindowsControlBusy(false)
       }
     },
-    [refreshIntegrationStatus, showReminder],
+    [refreshIntegrationStatus, showActionReminder],
   )
 
   const runUpdateAction = useCallback(async () => {
@@ -394,34 +389,45 @@ function WidgetApp() {
   )
 
   const startMinimalWindowsControl = useCallback(async () => {
+    if (minimalWindowsStartRef.current || minimalWindowsStarting) return
+    if (!window.widgetControls) {
+      showReminder('极简 Windows 手势控制仅在 Windows 桌面版中可用')
+      return
+    }
+    minimalWindowsStartRef.current = true
+    setMinimalWindowsStarting(true)
     setGestureMode('windows')
     setSettings((current) => ({ ...current, gestureEnabled: true }))
     setCameraMode('monitor')
 
     try {
       const controls = window.widgetControls
-      if (controls && integrationStatus?.control?.enabled === false) {
+      if (controls) {
         const status = await controls.setWindowsControlEnabled(true)
         if (!status.enabled) throw new Error('Windows 桌面控制未能恢复')
         await refreshIntegrationStatus()
       }
-      if (!['loading', 'calibrating', 'monitoring'].includes(monitorPhase)) {
-        const started = await startMonitorSession()
-        if (!started) return
+      // Restart explicitly so a previous failed recognizer also gets a new
+      // active lifecycle rather than remaining stuck in its fail-closed state.
+      const started = await startMonitorSession(undefined, { posture: false })
+      if (!started) {
+        showReminder('摄像头启动失败或已取消，极简手势控制未启动')
+        return
       }
-      changeViewMode('minimal')
-      showReminder('极简 Windows 手势控制已启动')
+      minimalWindowsPendingRef.current = true
+      setMinimalWindowsPending(true)
     } catch (caught) {
       showReminder(
         caught instanceof Error ? caught.message : '极简桌面控制启动失败',
       )
+    } finally {
+      minimalWindowsStartRef.current = false
+      if (!minimalWindowsPendingRef.current) setMinimalWindowsStarting(false)
     }
   }, [
-    changeViewMode,
-    integrationStatus?.control?.enabled,
-    monitorPhase,
     refreshIntegrationStatus,
     showReminder,
+    minimalWindowsStarting,
     startMonitorSession,
   ])
 
@@ -476,6 +482,14 @@ function WidgetApp() {
 
   const handleVoiceCommand = useCallback(
     (command: VoiceCommandEvent) => {
+      if (command.action === 'pause_windows_control') {
+        void setWindowsControlEnabled(false)
+        return
+      }
+      if (command.action === 'start_windows_gestures') {
+        void startMinimalWindowsControl()
+        return
+      }
       if (command.action === 'open_task_picker') {
         openTaskPicker()
         showReminder('语音命令：已打开任务选择器')
@@ -523,6 +537,8 @@ function WidgetApp() {
       openTaskPicker,
       runGestureAction,
       setVoiceControlEnabled,
+      setWindowsControlEnabled,
+      startMinimalWindowsControl,
       showReminder,
       startMonitorSession,
       stopMonitorSession,
@@ -611,7 +627,35 @@ function WidgetApp() {
     videoRef,
   })
 
+  const settleMinimalStartup = useCallback(() => {
+    minimalWindowsPendingRef.current = false
+    setMinimalWindowsPending(false)
+    setMinimalWindowsStarting(false)
+  }, [])
+  const finishMinimalStartup = useCallback(() => {
+    changeViewMode('minimal')
+    showReminder('极简 Windows 手势控制已启动')
+  }, [changeViewMode, showReminder])
+  useMinimalGestureReadiness({
+    pending: minimalWindowsPending,
+    enabled: settings.gestureEnabled && cameraMode === 'monitor' && gestureMode === 'windows',
+    cameraPhase: monitor.phase,
+    cameraError: monitor.error,
+    modelPhase: gesture.modelPhase,
+    modelError: gesture.error,
+    onSettled: settleMinimalStartup,
+    onReady: finishMinimalStartup,
+    onError: showReminder,
+  })
+
   const pointerControlRequested = airPointerEnabled
+
+  useEffect(() => {
+    if (screenUsageMinimized && gesture.modelPhase === 'error') {
+      changeViewMode('collapsed')
+      showReminder(`手势识别已停止：${gesture.error || '请重新启动'}`)
+    }
+  }, [screenUsageMinimized, gesture.modelPhase, gesture.error, changeViewMode, showReminder])
 
   useEffect(() => {
     const controls = window.widgetControls
@@ -647,11 +691,7 @@ function WidgetApp() {
   }, [pointerControlRequested, showReminder])
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(GESTURE_MODE_STORAGE_KEY, gestureMode)
-    } catch {
-      // Local persistence is optional; gesture control remains functional.
-    }
+    saveGestureMode(gestureMode)
   }, [gestureMode])
 
   useEffect(() => {
@@ -750,6 +790,9 @@ function WidgetApp() {
     const removeVoiceCommandListener = controls.onVoiceCommand(handleVoiceCommand)
     const removeVoiceStatusListener = controls.onVoiceControlStatus((status) => {
       setVoiceStatus(status)
+      if (status.phase === 'error' || status.phase === 'unavailable') {
+        changeViewMode('collapsed')
+      }
       if (
         status.phase === 'listening' ||
         status.phase === 'unavailable' ||
@@ -880,14 +923,21 @@ function WidgetApp() {
   return (
     <main
       className={`widget-root ${expanded ? 'is-expanded' : 'is-collapsed'} ${screenUsageMinimized ? 'is-minimal' : ''} ${sessionActive ? 'has-active-camera' : ''} ${audioPhase === 'active' ? 'has-active-audio' : ''}`}
+      data-camera-phase={monitor.phase}
+      data-gesture-phase={gesture.modelPhase}
+      data-gesture-mode={gestureMode}
+      data-gesture-frames={gesture.processedFrames ?? 0}
+      data-gesture-error={gesture.error || ''}
     >
       <FloatingButton
         actionFeedback={desktopActionFeedback}
         hidden={!screenUsageMinimized}
         gestureActive={settings.gestureEnabled && gesture.modelPhase === 'ready'}
         phase={monitor.phase}
+        postureActive={monitor.postureActive}
         score={monitor.score}
         status={monitor.status}
+        voiceListening={voiceStatus.phase === 'listening'}
         onExpand={() => changeViewMode('collapsed')}
       />
       <section
@@ -955,10 +1005,22 @@ function WidgetApp() {
             <button
               type="button"
               aria-label="一键启动极简 Windows 桌面手势控制"
-              title="启动摄像头、校准并进入极简 Windows 手势控制"
+              title="启动摄像头并进入极简 Windows 手势控制"
+              disabled={minimalWindowsStarting}
               onClick={() => void startMinimalWindowsControl()}
             >
               <Hand size={18} aria-hidden="true" />
+            </button>
+            <button
+              className="voice-control-toggle"
+              type="button"
+              aria-label={voiceStatus.enabled ? '关闭语音控制' : '开启语音控制'}
+              aria-pressed={voiceStatus.enabled}
+              disabled={voiceStatus.phase === 'starting'}
+              title={`${voiceStatus.message} · 说“助手 切换窗口”或“助手 暂停控制”`}
+              onClick={() => void setVoiceControlEnabled(!voiceStatus.enabled)}
+            >
+              <Mic size={18} aria-hidden="true" />
             </button>
             <button
               className="expanded-only"
@@ -1070,6 +1132,7 @@ function WidgetApp() {
               <MiniCameraControls
                 mode={cameraMode}
                 phase={monitor.phase}
+                postureActive={monitor.postureActive}
                 status={monitor.status}
                 score={monitor.score}
                 actionLabel={actionLabel}
@@ -1085,7 +1148,7 @@ function WidgetApp() {
               />
             ) : cameraMode === 'monitor' ? (
               <>
-                <div className="monitor-data-grid">
+                {monitor.postureActive ? <div className="monitor-data-grid">
                   <WidgetMetrics
                     score={monitor.score}
                     status={monitor.status}
@@ -1093,7 +1156,7 @@ function WidgetApp() {
                     awayCount={monitor.awayCount}
                     trend={monitor.trend}
                   />
-                </div>
+                </div> : <p role="status">仅手势控制，坐姿监测未启用</p>}
 
               </>
             ) : cameraMode === 'codes' || cameraMode === 'document' ? (

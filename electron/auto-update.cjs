@@ -55,7 +55,11 @@ class DesktopAutoUpdater {
     this.started = true
     this.updater.autoDownload = true
     this.updater.autoInstallOnAppQuit = true
-    this.updater.allowPrerelease = false
+    // GitHubProvider uses the first Atom release when this is true, so the
+    // release feed can deliver the newest preview to stable installs too.
+    // Keep downgrade protection explicit: channel selection must never turn
+    // into a downgrade policy change.
+    this.updater.allowPrerelease = true
     this.updater.allowDowngrade = false
 
     this.updater.on('checking-for-update', () =>

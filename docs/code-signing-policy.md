@@ -36,6 +36,10 @@ The release workflow must test and build on GitHub-hosted runners, submit only w
 
 The repository currently contains a fail-closed PFX integration using `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD`, and the non-secret expected subject variable `WIN_CSC_SUBJECT`. SignPath HSM approval does not produce a PFX and must not be emulated through those variables. If SignPath is approved, the release workflow must be changed to use the exact issued organization, project, signing-policy, artifact-configuration, and token integration before it is enabled.
 
+## Explicit unsigned channel
+
+The separately dispatched unsigned-preview workflow is an explicit user-authorized distribution channel, not a fallback when signing fails. New clients accept newer prereleases as well as stable releases, with downgrade prevention and upstream hash/signature verification left intact. Its ordinary semver tags do not trigger the signed `v*` production workflow. Unsigned packages have no verified Authenticode publisher identity; checksums and build provenance do not replace that identity. Legacy clients require one manual bootstrap upgrade. Production signing requirements above remain unchanged.
+
 ## Protected release refs
 
 The `main` branch and every `v*` release tag must be covered by active GitHub

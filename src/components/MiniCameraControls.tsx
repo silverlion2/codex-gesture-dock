@@ -31,6 +31,7 @@ interface MiniCameraControlsProps {
   phase: MonitorPhase
   status: PostureStatus
   score: number | null
+  postureActive?: boolean
   actionLabel: string
   mirrored: boolean
   videoRef: RefObject<HTMLVideoElement | null>
@@ -43,8 +44,8 @@ interface MiniCameraControlsProps {
   onMessage: (message: string) => void
 }
 
-function monitorSummary(phase: MonitorPhase, status: PostureStatus) {
-  if (phase === 'monitoring') return statusLabel[status]
+function monitorSummary(phase: MonitorPhase, status: PostureStatus, postureActive: boolean) {
+  if (phase === 'monitoring') return postureActive ? statusLabel[status] : '仅手势控制，坐姿监测未启用'
   if (phase === 'loading') return '正在准备本地模型'
   if (phase === 'calibrating') return '正在校准坐姿'
   if (phase === 'error') return '摄像头需要重试'
@@ -68,6 +69,7 @@ export function MiniCameraControls({
   phase,
   status,
   score,
+  postureActive = true,
   actionLabel,
   mirrored,
   videoRef,
@@ -113,8 +115,8 @@ export function MiniCameraControls({
         <div className={`mini-camera-reading status-${status}`} aria-live="polite">
           <span className="mini-status-dot" aria-hidden="true" />
           <div>
-            <strong>{phase === 'monitoring' && score !== null ? score : '—'}</strong>
-            <small>{monitorSummary(phase, status)}</small>
+            <strong>{phase === 'monitoring' && postureActive && score !== null ? score : '—'}</strong>
+            <small>{monitorSummary(phase, status, postureActive)}</small>
           </div>
         </div>
         <div className="mini-control-actions">

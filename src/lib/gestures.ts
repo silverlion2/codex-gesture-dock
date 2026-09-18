@@ -188,7 +188,10 @@ export interface GestureMachineState {
   awaitingNeutral: boolean
   candidate: GestureName | null
   candidateSince: number | null
+  candidateSamples: number
+  lastSampleAt: number | null
   neutralSince: number | null
+  neutralSamples: number
   progress: number
 }
 
@@ -208,17 +211,23 @@ export interface GestureMachineResult {
 export const GESTURE_HOLD_MS = 850
 export const GESTURE_RELEASE_MS = 360
 export const GESTURE_SCORE_THRESHOLD = 0.72
+export const GESTURE_MAX_FRAME_GAP_MS = 350
+export const GESTURE_MIN_HOLD_SAMPLES = 4
+export const GESTURE_MIN_RELEASE_SAMPLES = 2
 
 export const initialGestureMachineState: GestureMachineState = {
   awaitingNeutral: false,
   candidate: null,
   candidateSince: null,
+  candidateSamples: 0,
+  lastSampleAt: null,
   neutralSince: null,
+  neutralSamples: 0,
   progress: 0,
 }
 
 export function isGestureName(value: string): value is GestureName {
-  return value in CODEX_GESTURE_BINDINGS
+  return Object.hasOwn(CODEX_GESTURE_BINDINGS, value)
 }
 
 export function advanceGestureMachine(
@@ -226,6 +235,37 @@ export function advanceGestureMachine(
   frame: GestureFrame,
   bindings: Record<GestureName, GestureBinding> = CODEX_GESTURE_BINDINGS,
 ): GestureMachineResult {
+  const timestampValid = Number.isFinite(frame.now)
+  const previousTimestamp = current.lastSampleAt
+  const elapsed = previousTimestamp === null ? null : frame.now - previousTimestamp
+  const hasInvalidTimestamp =
+    !timestampValid ||
+    (elapsed !== null && (elapsed <= 0 || elapsed > GESTURE_MAX_FRAME_GAP_MS))
+
+  if (hasInvalidTimestamp) {
+    const state = current.awaitingNeutral
+      ? {
+          ...current,
+          candidate: null,
+          candidateSince: null,
+          candidateSamples: 0,
+          lastSampleAt: null,
+          neutralSince: null,
+          neutralSamples: 0,
+          progress: 0,
+        }
+      : { ...initialGestureMachineState }
+    return {
+      action: null,
+      binding: null,
+      gesture: null,
+      state,
+    }
+  }
+
+  // A long gap breaks continuity. The invalid-timestamp branch above keeps
+  // the neutral latch after a fired gesture so a stale frame cannot retrigger.
+  const base = current
   const recognized =
     frame.name &&
     frame.confidence >= GESTURE_SCORE_THRESHOLD &&
@@ -233,31 +273,47 @@ export function advanceGestureMachine(
       ? frame.name
       : null
 
-  if (current.awaitingNeutral) {
+  if (base.awaitingNeutral) {
     if (recognized) {
       return {
         action: null,
         binding: bindings[recognized],
         gesture: null,
         state: {
-          ...current,
+          ...base,
           candidate: recognized,
           candidateSince: null,
+          candidateSamples: 0,
+          lastSampleAt: frame.now,
           neutralSince: null,
+          neutralSamples: 0,
           progress: 0,
         },
       }
     }
 
-    const neutralSince = current.neutralSince ?? frame.now
-    const released = frame.now - neutralSince >= GESTURE_RELEASE_MS
+    const neutralSince = base.neutralSince ?? frame.now
+    const neutralSamples = base.neutralSince === null
+      ? 1
+      : base.neutralSamples + 1
+    const released =
+      frame.now - neutralSince >= GESTURE_RELEASE_MS &&
+      neutralSamples >= GESTURE_MIN_RELEASE_SAMPLES
     return {
       action: null,
       binding: null,
       gesture: null,
       state: released
         ? { ...initialGestureMachineState }
-        : { ...current, neutralSince, candidate: null, progress: 0 },
+        : {
+            ...base,
+            neutralSince,
+            neutralSamples,
+            candidate: null,
+            candidateSamples: 0,
+            lastSampleAt: frame.now,
+            progress: 0,
+          },
     }
   }
 
@@ -266,11 +322,11 @@ export function advanceGestureMachine(
       action: null,
       binding: null,
       gesture: null,
-      state: { ...initialGestureMachineState },
+      state: { ...initialGestureMachineState, lastSampleAt: frame.now },
     }
   }
 
-  if (current.candidate !== recognized || current.candidateSince === null) {
+  if (base.candidate !== recognized || base.candidateSince === null) {
     return {
       action: null,
       binding: bindings[recognized],
@@ -279,22 +335,22 @@ export function advanceGestureMachine(
         ...initialGestureMachineState,
         candidate: recognized,
         candidateSince: frame.now,
+        candidateSamples: 1,
+        lastSampleAt: frame.now,
       },
     }
   }
 
-  const progress = Math.min(
-    1,
-    (frame.now - current.candidateSince) / GESTURE_HOLD_MS,
-  )
+  const candidateSamples = base.candidateSamples + 1
+  const progress = Math.min(1, (frame.now - base.candidateSince) / GESTURE_HOLD_MS)
   const binding = bindings[recognized]
 
-  if (progress < 1) {
+  if (progress < 1 || candidateSamples < GESTURE_MIN_HOLD_SAMPLES) {
     return {
       action: null,
       binding,
       gesture: null,
-      state: { ...current, progress },
+      state: { ...base, candidateSamples, lastSampleAt: frame.now, progress },
     }
   }
 
@@ -306,7 +362,10 @@ export function advanceGestureMachine(
       awaitingNeutral: true,
       candidate: recognized,
       candidateSince: null,
+      candidateSamples: 0,
+      lastSampleAt: frame.now,
       neutralSince: null,
+      neutralSamples: 0,
       progress: 1,
     },
   }

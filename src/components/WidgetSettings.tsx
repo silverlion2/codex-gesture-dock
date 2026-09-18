@@ -159,7 +159,7 @@ export function WidgetSettings({
         </small>
       </div>
       <details className="voice-command-guide">
-        <summary>查看固定语音口令（19）</summary>
+          <summary>查看固定语音口令（{ZH_VOICE_COMMANDS.length}）</summary>
         <div>
           <strong>中文（简体）</strong>
           <ul>

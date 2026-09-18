@@ -58,6 +58,18 @@ describe('Windows voice control', () => {
       phrase: '助手 开始监测',
       confidence: 0.72,
     })
+    for (const action of [
+      'switch_window',
+      'switch_window_back',
+      'minimize_active_window',
+      'maximize_active_window',
+      'pause_windows_control',
+      'start_windows_gestures',
+    ]) {
+      expect(normalizeVoiceHelperEvent({
+        type: 'command', action, phrase: `Codex ${action}`, confidence: 0.9,
+      })?.action).toBe(action)
+    }
     expect(normalizeVoiceHelperEvent({
       type: 'command',
       action: 'review',

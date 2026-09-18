@@ -5,6 +5,17 @@ import { describe, expect, it, vi } from 'vitest'
 import { FloatingButton } from './FloatingButton'
 
 describe('FloatingButton', () => {
+  it('keeps microphone listening visible and announced in minimal mode', () => {
+    const { container, getByRole } = render(<FloatingButton hidden={false} gestureActive
+      phase="monitoring" postureActive={false} voiceListening score={null} status="away" onExpand={vi.fn()} />)
+    expect(getByRole('button', { name: /语音正在监听/ })).toBeTruthy()
+    expect(container.querySelector('.bubble-voice-indicator')).toBeTruthy()
+  })
+  it('does not announce a posture score for camera-only gestures', () => {
+    const { getByRole } = render(<FloatingButton hidden={false} gestureActive
+      phase="monitoring" postureActive={false} score={null} status="away" onExpand={vi.fn()} />)
+    expect(getByRole('button', { name: '仅手势控制，恢复迷你摄像头 Dock' })).toBeTruthy()
+  })
   it('restores the compact dock while preserving live posture feedback', () => {
     const onExpand = vi.fn()
     render(

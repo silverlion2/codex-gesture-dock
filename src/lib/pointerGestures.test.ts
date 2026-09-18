@@ -175,6 +175,50 @@ describe('air pointer gesture state', () => {
     }))
     expect(reacquired.commands).not.toContainEqual({ kind: 'click' })
   })
+
+  it('does not reuse filtered coordinates after a long tracking gap', () => {
+    const first = advanceAirPointer(initialAirPointerState, {
+      confidence: 0.9,
+      gesture: 'Pointing_Up',
+      landmarks: pointingHand(),
+      now: 100,
+    })
+    const moved = pointingHand()
+    moved[8] = { x: 0.9, y: 0.9 }
+    const afterGap = advanceAirPointer(first.state, {
+      confidence: 0.9,
+      gesture: 'Pointing_Up',
+      landmarks: moved,
+      now: 1_000,
+    })
+
+    const move = afterGap.commands[0]
+    expect(move?.kind).toBe('move')
+    if (move?.kind === 'move') {
+      expect(move.x).toBeCloseTo(0.1)
+      expect(move.y).toBeCloseTo(0.9)
+    }
+    expect(afterGap.state.oneEuroX?.value).toBeCloseTo(0.1)
+    expect(afterGap.state.oneEuroY?.value).toBeCloseTo(0.9)
+  })
+
+  it('resets pointer dwell when camera timestamps move backward', () => {
+    const first = advanceAirPointer(initialAirPointerState, {
+      confidence: 0.9,
+      gesture: 'Pointing_Up',
+      landmarks: pointingHand(),
+      now: 100,
+    })
+    const backward = advanceAirPointer(first.state, {
+      confidence: 0.9,
+      gesture: 'Pointing_Up',
+      landmarks: pinchedHand(),
+      now: 50,
+    })
+
+    expect(backward.commands).not.toContainEqual({ kind: 'click' })
+    expect(backward.state.pointerArmedAt).toBe(Number.NEGATIVE_INFINITY)
+  })
 })
 
 describe('air pointer eligibility', () => {

@@ -31,10 +31,18 @@ jobs:
         run: |
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
           if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Expected a stable package version.' }
-          $tag = "preview/v$version"
+          $tag = "$version"
           $existing = git ls-remote --tags origin "refs/tags/$tag"
           if ($LASTEXITCODE -ne 0) { throw 'Could not inspect remote tags.' }
           if ($existing) { throw "Preview tag $tag already exists; do not overwrite releases." }
+          $publishedTags = @(gh api "repos/$env:GH_REPO/releases" --paginate --jq '.[].tag_name')
+          if ($LASTEXITCODE -ne 0) { throw 'Could not check published version ordering.' }
+          foreach ($publishedTag in $publishedTags) {
+            $publishedVersion = $publishedTag -replace '^(preview/)?v?', ''
+            if ($publishedVersion -match '^\d+\.\d+\.\d+$' -and [version]$publishedVersion -ge [version]$version) {
+              throw "Candidate $version must be newer than every published package version ($publishedVersion)."
+            }
+          }
           $stable = gh api "repos/$env:GH_REPO/releases/latest" --jq '.tag_name'
           if ($LASTEXITCODE -ne 0 -or -not $stable) { throw 'Could not establish current stable release.' }
           "STABLE_RELEASE_TAG=$stable" >> $env:GITHUB_ENV
@@ -62,7 +70,7 @@ jobs:
         env:
           PREVIOUS_INSTALLER: ${{ steps.previous.outputs.path }}
         run: ./scripts/install-smoke.ps1 -PreviousInstaller $env:PREVIOUS_INSTALLER
-      - name: Prepare manual-download assets without updater metadata
+      - name: Prepare verified all-release update assets
         shell: pwsh
         run: ./scripts/prepare-preview.ps1
       - name: Attest preview build origin (not Authenticode)
@@ -76,7 +84,7 @@ jobs:
           $tag = [string]$manifest.tag
           $files = @($manifest.assets | ForEach-Object { "artifacts/preview/$($_.name)" })
           $files += 'artifacts/preview/preview-release.json', 'artifacts/preview/SHA256SUMS.txt'
-          if ($files.Count -ne 5) { throw 'Unexpected preview asset count.' }
+          if ($files.Count -ne 7) { throw 'Unexpected preview asset count.' }
           gh release create $tag @files --target $env:GITHUB_SHA --draft --prerelease --latest=false --title "Codex Gesture Dock $($manifest.version) — unsigned preview / 未签名预览版" --notes-file docs/unsigned-preview-notes.md
           if ($LASTEXITCODE -ne 0) { throw 'Preview draft creation failed.' }
           $draftJson = gh release view $tag --json databaseId
@@ -85,7 +93,7 @@ jobs:
           $releaseJson = gh api "repos/$env:GH_REPO/releases/$releaseId"
           if ($LASTEXITCODE -ne 0) { throw 'Could not verify uploaded assets.' }
           $release = $releaseJson | ConvertFrom-Json
-          if (-not $release.prerelease -or -not $release.draft -or $release.assets.Count -ne 5) { throw 'Unexpected draft state.' }
+          if (-not $release.prerelease -or -not $release.draft -or $release.assets.Count -ne 7) { throw 'Unexpected draft state.' }
           foreach ($file in $files) {
             $name = Split-Path $file -Leaf
             $remote = @($release.assets | Where-Object { $_.name -eq $name })
@@ -99,7 +107,7 @@ jobs:
           $publishedJson = gh api "repos/$env:GH_REPO/releases/$releaseId"
           if ($LASTEXITCODE -ne 0) { throw 'Could not verify published release.' }
           $published = $publishedJson | ConvertFrom-Json
-          if ($published.draft -or -not $published.prerelease -or $published.assets.Count -ne 5) { throw 'Unexpected published state.' }
+          if ($published.draft -or -not $published.prerelease -or $published.assets.Count -ne 7) { throw 'Unexpected published state.' }
           $stable = gh api "repos/$env:GH_REPO/releases/latest" --jq '.tag_name'
           if ($LASTEXITCODE -ne 0 -or $stable -ne $env:STABLE_RELEASE_TAG) { throw 'Stable latest release changed unexpectedly.' }
           Write-Output $published.html_url

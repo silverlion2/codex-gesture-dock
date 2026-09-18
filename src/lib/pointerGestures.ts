@@ -1,3 +1,5 @@
+import { advanceOneEuroFilter } from './oneEuroFilter'
+
 export type PointerActivity =
   | 'idle'
   | 'moving'
@@ -30,6 +32,8 @@ export interface AirPointerState {
   scrollAnchorY: number | null
   smoothedX: number | null
   smoothedY: number | null
+  oneEuroX: import('./oneEuroFilter').OneEuroFilterState | null
+  oneEuroY: import('./oneEuroFilter').OneEuroFilterState | null
 }
 
 export interface AirPointerEligibility {
@@ -60,7 +64,7 @@ const SCROLL_COOLDOWN_MS = 120
 const PINCH_START_RATIO = 0.34
 const PINCH_RELEASE_RATIO = 0.48
 const SCROLL_STEP = 0.04
-const SMOOTHING = 0.38
+const ONE_EURO_OPTIONS = { minCutoff: 1, beta: 4, derivativeCutoff: 1 }
 
 export const initialAirPointerState: AirPointerState = {
   lastClickAt: Number.NEGATIVE_INFINITY,
@@ -71,6 +75,8 @@ export const initialAirPointerState: AirPointerState = {
   scrollAnchorY: null,
   smoothedX: null,
   smoothedY: null,
+  oneEuroX: null,
+  oneEuroY: null,
 }
 
 export function shouldEnableAirPointer({
@@ -100,6 +106,8 @@ export function disarmAirPointerState(
     scrollAnchorY: null,
     smoothedX: null,
     smoothedY: null,
+    oneEuroX: null,
+    oneEuroY: null,
   }
 }
 
@@ -134,20 +142,26 @@ function isIndexExtended(landmarks: HandLandmark[]) {
   return indexExtended && foldedCount >= 2
 }
 
-function smooth(previous: number | null, next: number) {
-  return previous === null ? next : previous + (next - previous) * SMOOTHING
-}
-
 export function advanceAirPointer(
   current: AirPointerState,
   frame: AirPointerFrame,
 ): AirPointerResult {
-  if (!validLandmarks(frame.landmarks)) {
+  if (!validLandmarks(frame.landmarks) || !Number.isFinite(frame.now)) {
     return {
       activity: 'idle',
       commands: [],
       state: disarmAirPointerState(current),
     }
+  }
+
+  // A stale or non-monotonic camera clock must not preserve pointer dwell,
+  // pinch, or filtered coordinates across a tracking discontinuity.
+  const elapsedSincePointer = frame.now - current.lastPointerAt
+  if (
+    Number.isFinite(current.lastPointerAt) &&
+    (elapsedSincePointer <= 0 || elapsedSincePointer > 500)
+  ) {
+    current = disarmAirPointerState(current)
   }
 
   const landmarks = frame.landmarks
@@ -200,8 +214,21 @@ export function advanceAirPointer(
   if (pointing || pinching) {
     const targetX = clamp01(1 - indexTip.x)
     const targetY = clamp01(indexTip.y)
-    const smoothedX = clamp01(smooth(current.smoothedX, targetX))
-    const smoothedY = clamp01(smooth(current.smoothedY, targetY))
+    const timestampSeconds = frame.now / 1_000
+    const filteredX = advanceOneEuroFilter(
+      current.oneEuroX,
+      targetX,
+      timestampSeconds,
+      ONE_EURO_OPTIONS,
+    )
+    const filteredY = advanceOneEuroFilter(
+      current.oneEuroY,
+      targetY,
+      timestampSeconds,
+      ONE_EURO_OPTIONS,
+    )
+    const smoothedX = clamp01(filteredX.value ?? targetX)
+    const smoothedY = clamp01(filteredY.value ?? targetY)
     next = {
       ...next,
       lastPointerAt: frame.now,
@@ -212,6 +239,8 @@ export function advanceAirPointer(
         : current.pointerArmedAt,
       smoothedX,
       smoothedY,
+      oneEuroX: filteredX.state,
+      oneEuroY: filteredY.state,
     }
     commands.push({ kind: 'move', x: smoothedX, y: smoothedY })
   }

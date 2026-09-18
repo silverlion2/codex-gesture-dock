@@ -2,12 +2,33 @@ import { describe, expect, it } from 'vitest'
 import {
   advanceGestureMachine,
   GESTURE_HOLD_MS,
-  GESTURE_RELEASE_MS,
+  GESTURE_MAX_FRAME_GAP_MS,
   initialGestureMachineState,
+  isGestureName,
   isWindowsAction,
   WINDOWS_ACTIONS,
   WINDOWS_GESTURE_BINDINGS,
+  type GestureMachineState,
 } from './gestures'
+
+function confirmGesture(
+  name: string,
+  bindings: Parameters<typeof advanceGestureMachine>[2] = undefined,
+  start = 0,
+) {
+  let state: GestureMachineState = initialGestureMachineState
+  let result = advanceGestureMachine(state, { name, confidence: 0.9, now: start })
+  state = result.state
+  for (let index = 1; index <= 5; index += 1) {
+    result = advanceGestureMachine(state, {
+      name,
+      confidence: 0.9,
+      now: start + index * 200,
+    }, bindings)
+    state = result.state
+  }
+  return result
+}
 
 describe('gesture confirmation state machine', () => {
   it('routes every Windows command independently of the six hand bindings', () => {
@@ -17,39 +38,15 @@ describe('gesture confirmation state machine', () => {
   })
 
   it('triggers only after a stable hold', () => {
-    const started = advanceGestureMachine(initialGestureMachineState, {
-      name: 'Victory',
-      confidence: 0.9,
-      now: 100,
-    })
-    const early = advanceGestureMachine(started.state, {
-      name: 'Victory',
-      confidence: 0.9,
-      now: 100 + GESTURE_HOLD_MS - 1,
-    })
-    const confirmed = advanceGestureMachine(early.state, {
-      name: 'Victory',
-      confidence: 0.9,
-      now: 100 + GESTURE_HOLD_MS,
-    })
+    const confirmed = confirmGesture('Victory', undefined, 100)
 
-    expect(early.action).toBeNull()
     expect(confirmed.action).toBe('quick_chat')
     expect(confirmed.gesture).toBe('Victory')
     expect(confirmed.state.awaitingNeutral).toBe(true)
   })
 
   it('does not repeat while the same hand pose is held', () => {
-    const started = advanceGestureMachine(initialGestureMachineState, {
-      name: 'Thumb_Up',
-      confidence: 0.92,
-      now: 0,
-    })
-    const confirmed = advanceGestureMachine(started.state, {
-      name: 'Thumb_Up',
-      confidence: 0.92,
-      now: GESTURE_HOLD_MS,
-    })
+    const confirmed = confirmGesture('Thumb_Up')
     const held = advanceGestureMachine(confirmed.state, {
       name: 'Thumb_Up',
       confidence: 0.94,
@@ -62,32 +59,14 @@ describe('gesture confirmation state machine', () => {
   })
 
   it('activates Codex dictation after holding the pointing gesture', () => {
-    const started = advanceGestureMachine(initialGestureMachineState, {
-      name: 'Pointing_Up',
-      confidence: 0.94,
-      now: 0,
-    })
-    const confirmed = advanceGestureMachine(started.state, {
-      name: 'Pointing_Up',
-      confidence: 0.94,
-      now: GESTURE_HOLD_MS,
-    })
+    const confirmed = confirmGesture('Pointing_Up')
 
     expect(confirmed.action).toBe('dictation')
     expect(confirmed.binding?.actionLabel).toBe('激活 Codex 话筒')
   })
 
   it('uses the independent Windows mapping when that mode is active', () => {
-    const started = advanceGestureMachine(
-      initialGestureMachineState,
-      { name: 'Open_Palm', confidence: 0.94, now: 0 },
-      WINDOWS_GESTURE_BINDINGS,
-    )
-    const confirmed = advanceGestureMachine(
-      started.state,
-      { name: 'Open_Palm', confidence: 0.94, now: GESTURE_HOLD_MS },
-      WINDOWS_GESTURE_BINDINGS,
-    )
+    const confirmed = confirmGesture('Open_Palm', WINDOWS_GESTURE_BINDINGS)
 
     expect(confirmed.action).toBe('show_desktop')
     expect(confirmed.binding?.actionLabel).toBe('显示桌面')
@@ -104,40 +83,28 @@ describe('gesture confirmation state machine', () => {
     }
 
     for (const [name, action] of Object.entries(expected)) {
-      const started = advanceGestureMachine(
-        initialGestureMachineState,
-        { name, confidence: 0.94, now: 0 },
-        WINDOWS_GESTURE_BINDINGS,
-      )
-      const confirmed = advanceGestureMachine(
-        started.state,
-        { name, confidence: 0.94, now: GESTURE_HOLD_MS },
-        WINDOWS_GESTURE_BINDINGS,
-      )
+      const confirmed = confirmGesture(name, WINDOWS_GESTURE_BINDINGS)
       expect(confirmed.action).toBe(action)
     }
   })
 
   it('rearms only after a neutral release window', () => {
-    const started = advanceGestureMachine(initialGestureMachineState, {
-      name: 'Open_Palm',
-      confidence: 0.9,
-      now: 0,
-    })
-    const confirmed = advanceGestureMachine(started.state, {
-      name: 'Open_Palm',
-      confidence: 0.9,
-      now: GESTURE_HOLD_MS,
-    })
+    const confirmed = confirmGesture('Open_Palm')
+    const confirmedAt = confirmed.state.lastSampleAt ?? GESTURE_HOLD_MS
     const releaseStarted = advanceGestureMachine(confirmed.state, {
       name: null,
       confidence: 0,
-      now: GESTURE_HOLD_MS + 50,
+      now: confirmedAt + 100,
     })
-    const released = advanceGestureMachine(releaseStarted.state, {
+    const releaseContinued = advanceGestureMachine(releaseStarted.state, {
       name: null,
       confidence: 0,
-      now: GESTURE_HOLD_MS + 50 + GESTURE_RELEASE_MS,
+      now: confirmedAt + 250,
+    })
+    const released = advanceGestureMachine(releaseContinued.state, {
+      name: null,
+      confidence: 0,
+      now: confirmedAt + 500,
     })
 
     expect(releaseStarted.state.awaitingNeutral).toBe(true)
@@ -160,5 +127,55 @@ describe('gesture confirmation state machine', () => {
 
     expect(reset.state.candidate).toBeNull()
     expect(reset.state.progress).toBe(0)
+  })
+
+  it('does not treat two widely separated frames as a hold', () => {
+    const started = advanceGestureMachine(initialGestureMachineState, {
+      name: 'Victory', confidence: 0.9, now: 0,
+    })
+    const separated = advanceGestureMachine(started.state, {
+      name: 'Victory', confidence: 0.9, now: GESTURE_HOLD_MS,
+    })
+
+    expect(separated.action).toBeNull()
+    expect(separated.state.candidateSamples).toBe(0)
+  })
+
+  it('preserves the neutral latch across a long gap', () => {
+    const confirmed = confirmGesture('Victory')
+    const confirmedAt = confirmed.state.lastSampleAt ?? GESTURE_HOLD_MS
+    const afterGap = advanceGestureMachine(confirmed.state, {
+      name: null,
+      confidence: 0,
+      now: confirmedAt + GESTURE_MAX_FRAME_GAP_MS + 1,
+    })
+
+    expect(afterGap.state.awaitingNeutral).toBe(true)
+    expect(afterGap.action).toBeNull()
+  })
+
+  it('fails closed for invalid and non-monotonic timestamps', () => {
+    const started = advanceGestureMachine(initialGestureMachineState, {
+      name: 'Victory', confidence: 0.9, now: 100,
+    })
+    const invalid = advanceGestureMachine(started.state, {
+      name: 'Victory', confidence: 0.9, now: Number.NaN,
+    })
+    const backwards = advanceGestureMachine(started.state, {
+      name: 'Victory', confidence: 0.9, now: 99,
+    })
+
+    expect(invalid.action).toBeNull()
+    expect(backwards.action).toBeNull()
+    expect(invalid.state.candidate).toBeNull()
+  })
+
+  it('does not accept unknown or prototype property names', () => {
+    expect(isGestureName('__proto__')).toBe(false)
+    const result = advanceGestureMachine(initialGestureMachineState, {
+      name: '__proto__', confidence: 1, now: 0,
+    })
+    expect(result.action).toBeNull()
+    expect(result.state.candidate).toBeNull()
   })
 })

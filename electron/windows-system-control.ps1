@@ -77,7 +77,8 @@ public static class FixedSystemKeys {
     };
   }
 
-  public static uint Press(ushort key) {
+  public static uint Press(ushort key, IntPtr expectedWindow = default(IntPtr)) {
+    if (expectedWindow != IntPtr.Zero && GetForegroundWindow() != expectedWindow) return 0;
     return SendInput(2, new[] { Key(key, false), Key(key, true) }, Marshal.SizeOf(typeof(INPUT)));
   }
 
@@ -89,9 +90,10 @@ public static class FixedSystemKeys {
     return SendInput(6, new[] { Key(first, false), Key(second, false), Key(key, false), Key(key, true), Key(second, true), Key(first, true) }, Marshal.SizeOf(typeof(INPUT)));
   }
 
-  private static IntPtr GetAllowedForegroundWindow(int excludedProcessId) {
+  private static IntPtr GetAllowedForegroundWindow(int excludedProcessId, IntPtr expectedWindow = default(IntPtr)) {
     IntPtr window = GetForegroundWindow();
     if (window == IntPtr.Zero) return IntPtr.Zero;
+    if (expectedWindow != IntPtr.Zero && window != expectedWindow) return IntPtr.Zero;
     uint processId;
     GetWindowThreadProcessId(window, out processId);
     return excludedProcessId > 0 && processId == (uint)excludedProcessId
@@ -99,15 +101,15 @@ public static class FixedSystemKeys {
       : window;
   }
 
-  public static uint MinimizeActiveWindow(int excludedProcessId) {
-    IntPtr window = GetAllowedForegroundWindow(excludedProcessId);
+  public static uint MinimizeActiveWindow(int excludedProcessId, IntPtr expectedWindow = default(IntPtr)) {
+    IntPtr window = GetAllowedForegroundWindow(excludedProcessId, expectedWindow);
     if (window == IntPtr.Zero) return 0;
     ShowWindow(window, SW_MINIMIZE);
     return IsIconic(window) ? 1u : 0u;
   }
 
-  public static uint ToggleMaximizeActiveWindow(int excludedProcessId) {
-    IntPtr window = GetAllowedForegroundWindow(excludedProcessId);
+  public static uint ToggleMaximizeActiveWindow(int excludedProcessId, IntPtr expectedWindow = default(IntPtr)) {
+    IntPtr window = GetAllowedForegroundWindow(excludedProcessId, expectedWindow);
     if (window == IntPtr.Zero) return 0;
     bool wasMaximized = IsZoomed(window);
     ShowWindow(window, wasMaximized ? SW_RESTORE : SW_MAXIMIZE);

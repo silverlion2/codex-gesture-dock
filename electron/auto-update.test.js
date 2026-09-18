@@ -64,7 +64,8 @@ describe('desktop auto updater', () => {
     updater.emit('update-downloaded', { version: '0.5.0' })
 
     expect(updater.autoDownload).toBe(true)
-    expect(updater.allowPrerelease).toBe(false)
+    expect(updater.allowPrerelease).toBe(true)
+    expect(updater.allowDowngrade).toBe(false)
     expect(manager.getStatus()).toMatchObject({
       phase: 'downloaded',
       availableVersion: '0.5.0',

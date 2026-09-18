@@ -14,6 +14,12 @@ export type VoiceCommandAction =
   | 'stop_monitoring'
   | 'minimize_window'
   | 'restore_window'
+  | 'switch_window'
+  | 'switch_window_back'
+  | 'minimize_active_window'
+  | 'maximize_active_window'
+  | 'pause_windows_control'
+  | 'start_windows_gestures'
   | 'disable_voice_commands'
 
 export interface VoiceControlStatus {
@@ -52,8 +58,8 @@ export const ZH_VOICE_COMMANDS = [
   '助手 打开任务',
   '助手 开始监测',
   '助手 停止监测',
-  '助手 最小化窗口',
-  '助手 恢复窗口',
+  '助手 缩小悬浮窗',
+  '助手 恢复悬浮窗',
   '助手 显示桌面',
   '助手 任务视图',
   '助手 打开资源管理器',
@@ -61,6 +67,12 @@ export const ZH_VOICE_COMMANDS = [
   '助手 音量减小',
   '助手 静音',
   '助手 关闭语音',
+  '助手 切换窗口',
+  '助手 上一个窗口',
+  '助手 最小化窗口',
+  '助手 最大化窗口',
+  '助手 暂停控制',
+  '助手 开启手势',
 ] as const
 
 export const EN_VOICE_COMMANDS = [
@@ -74,8 +86,8 @@ export const EN_VOICE_COMMANDS = [
   'Codex open tasks',
   'Codex start monitoring',
   'Codex stop monitoring',
-  'Codex minimize window',
-  'Codex restore window',
+  'Codex shrink widget',
+  'Codex restore widget',
   'Codex show desktop',
   'Codex task view',
   'Codex open explorer',
@@ -83,12 +95,18 @@ export const EN_VOICE_COMMANDS = [
   'Codex volume down',
   'Codex mute volume',
   'Codex disable voice',
+  'Codex switch window',
+  'Codex previous window',
+  'Codex minimize window',
+  'Codex maximize window',
+  'Codex pause Windows control',
+  'Codex start Windows gestures',
 ] as const
 
 export function voiceControlSummary(status: VoiceControlStatus) {
   if (status.phase === 'listening') {
     return status.culture.startsWith('zh')
-      ? '监听中 · 说“助手 打开任务”'
+      ? '监听中 · 说“助手 切换窗口”'
       : 'Listening · say “Codex open tasks”'
   }
   if (status.phase === 'starting') return '正在启动本机识别器'

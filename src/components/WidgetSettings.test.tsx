@@ -57,8 +57,8 @@ describe('WidgetSettings voice commands', () => {
       />,
     )
     expect(toggle.getAttribute('aria-checked')).toBe('true')
-    expect(screen.getByText('监听中 · 说“助手 打开任务”')).toBeTruthy()
-    fireEvent.click(screen.getByText('查看固定语音口令（19）'))
+    expect(screen.getByText('监听中 · 说“助手 切换窗口”')).toBeTruthy()
+    fireEvent.click(screen.getByText('查看固定语音口令（25）'))
     expect(screen.getByText('助手 开始监测')).toBeTruthy()
     expect(screen.getByText('Codex disable voice')).toBeTruthy()
   })

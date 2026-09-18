@@ -179,6 +179,18 @@ select:focus-visible {
   background: #7dec9d;
 }
 
+.bubble-voice-indicator {
+  position: absolute;
+  bottom: 9px;
+  left: 9px;
+  color: #166534;
+}
+
+.window-actions .voice-control-toggle[aria-pressed='true'] {
+  color: #166534;
+  background: #dcfce7;
+}
+
 .bubble-gesture-dot {
   position: absolute;
   right: 9px;

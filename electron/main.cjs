@@ -56,10 +56,13 @@ const APP_URL_PREFIX = `app://${APP_HOST}/`
 const DEV_SERVER_ORIGIN = 'http://127.0.0.1:5173'
 const isSmokeTest = process.argv.includes('--smoke-test')
 const isTaskWindowSmokeTest = process.argv.includes('--smoke-test-tasks')
-const isAnySmokeTest = isSmokeTest || isTaskWindowSmokeTest
+const isCameraSmokeTest = process.argv.includes('--smoke-test-camera')
+const isAnySmokeTest = isSmokeTest || isTaskWindowSmokeTest || isCameraSmokeTest
 const smokeStartedAt = isAnySmokeTest ? Date.now() : 0
 if (isAnySmokeTest) {
-  configureSmokeRuntime(app)
+  // Real MediaPipe inference needs the same WebGL path as normal operation.
+  // Only synthetic UI smoke runs disable GPU/software rasterization.
+  if (!isCameraSmokeTest) configureSmokeRuntime(app)
   app.setPath(
     'userData',
     fs.mkdtempSync(path.join(os.tmpdir(), 'codex-gesture-dock-smoke-')),
@@ -69,7 +72,8 @@ const hasSingleInstanceLock = app.requestSingleInstanceLock()
 const smokeReportPath = path.join(
   process.cwd(),
   'work',
-  isTaskWindowSmokeTest ? 'electron-task-window-smoke.json' : 'electron-smoke.json',
+  isCameraSmokeTest ? 'electron-camera-smoke.json' :
+    isTaskWindowSmokeTest ? 'electron-task-window-smoke.json' : 'electron-smoke.json',
 )
 
 let widgetWindow = null
@@ -366,7 +370,9 @@ function finishSmoke(payload, exitCode) {
       0,
     )
     runtimeMetrics = {
-      budget: isTaskWindowSmokeTest
+      budget: isCameraSmokeTest
+        ? { elapsedMs: 60_000, privateMb: 768, processCount: 8 }
+        : isTaskWindowSmokeTest
         ? { elapsedMs: 10_000, privateMb: 384, processCount: 8 }
         : { elapsedMs: 5_000, privateMb: 256, processCount: 6 },
       elapsedMs: Date.now() - smokeStartedAt,
@@ -820,6 +826,7 @@ function registerIpc() {
     if (!isTrustedSender(event) || !codexAdapter.supportsDesktopAction(action)) {
       return { ok: false, action, message: '不支持的 Codex 动作' }
     }
+    if (isCameraSmokeTest) return { ok: false, action, message: '摄像头验收禁止桌面动作' }
 
     const now = Date.now()
     if (now - lastCodexActionAt < 700) {
@@ -833,6 +840,7 @@ function registerIpc() {
     if (!isTrustedSender(event) || !windowsControl.supportsAction('windows', action)) {
       return { ok: false, action, message: '\u4e0d\u652f\u6301\u7684 Windows \u52a8\u4f5c' }
     }
+    if (isCameraSmokeTest) return { ok: false, action, message: '摄像头验收禁止桌面动作' }
 
     const now = Date.now()
     if (now - lastWindowsActionAt < 700) {
@@ -849,11 +857,11 @@ function registerIpc() {
         message: '无法从当前窗口更改空中鼠标状态',
       }
     }
-    return windowsControl.setPointerEnabled(enabled)
+    return windowsControl.setPointerEnabled(isCameraSmokeTest ? false : enabled)
   })
 
   ipcMain.on('windows:pointer-command', (event, value) => {
-    if (!isWidgetSender(event)) return
+    if (!isWidgetSender(event) || isCameraSmokeTest) return
     const command = mapPointerCommandToCurrentDisplay(value)
     if (!command) return
     windowsControl.sendPointerCommand(command)
@@ -877,7 +885,7 @@ function registerIpc() {
     if (!isWidgetSender(event) || typeof enabled !== 'boolean') {
       return voiceControl.getStatus()
     }
-    return voiceControl.setEnabled(enabled)
+    return voiceControl.setEnabled(isCameraSmokeTest ? false : enabled)
   })
 
   ipcMain.handle('updates:get-status', (event) => {
@@ -1274,8 +1282,23 @@ function createWidgetWindow() {
   }
 
   widgetWindow.once('ready-to-show', () => {
-    if (!isAnySmokeTest) widgetWindow.show()
+    if (!isAnySmokeTest || isCameraSmokeTest) widgetWindow.show()
   })
+
+  if (isCameraSmokeTest) {
+    const timeout = setTimeout(() => finishSmoke({ passed: false, stage: 'camera-timeout' }, 1), 55_000)
+    widgetWindow.webContents.once('did-finish-load', async () => {
+      try {
+        const { runCameraSmoke } = require('./camera-smoke.cjs')
+        const result = await runCameraSmoke(widgetWindow)
+        clearTimeout(timeout)
+        finishSmoke({ ...result, stage: 'real-camera-and-gesture-model' }, result.passed ? 0 : 1)
+      } catch (error) {
+        clearTimeout(timeout)
+        finishSmoke({ passed: false, stage: 'real-camera-and-gesture-model', error: String(error.message).slice(0, 240) }, 1)
+      }
+    })
+  }
 
   if (isSmokeTest) {
     const timeout = setTimeout(

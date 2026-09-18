@@ -50,6 +50,11 @@ interface UsePoseMonitorOptions {
   resourceSaving?: boolean
 }
 
+export interface StartSessionOptions {
+  /** Start the camera for gesture/pointer control without loading or calibrating posture. */
+  posture?: boolean
+}
+
 const CALIBRATION_MS = 4_000
 const AWAY_GRACE_MS = 1_200
 const MAX_TREND_POINTS = 42
@@ -90,6 +95,7 @@ export function usePoseMonitor({
   const [todayRatio, setTodayRatio] = useState(() =>
     ratioFromStats(loadDailyStats()),
   )
+  const [postureActive, setPostureActive] = useState(true)
 
   const phaseRef = useRef<MonitorPhase>('idle')
   const statusRef = useRef<PostureStatus>('away')
@@ -365,7 +371,11 @@ export function usePoseMonitor({
     return landmarker
   }, [])
 
-  const startSession = useCallback(async (deviceOverride?: string) => {
+  const startSession = useCallback(async (
+    deviceOverride?: string,
+    options: StartSessionOptions = {},
+  ) => {
+    const posture = options.posture ?? true
     const requestId = ++sessionRequestRef.current
     const requestedDeviceId = deviceOverride ?? videoDeviceId
     let acquiredStream: MediaStream | null = null
@@ -378,6 +388,7 @@ export function usePoseMonitor({
     clearCanvas()
     setError('')
     setPhase('loading')
+    setPostureActive(posture)
     setSessionSeconds(0)
     setAwayCount(0)
     setTrend([])
@@ -386,7 +397,7 @@ export function usePoseMonitor({
     poorSinceRef.current = null
 
     try {
-      await loadLandmarker()
+      if (posture) await loadLandmarker()
       if (requestId !== sessionRequestRef.current) return false
       const saving = resourceSavingRef.current
       acquiredStream = await navigator.mediaDevices.getUserMedia({
@@ -418,8 +429,16 @@ export function usePoseMonitor({
       }
       lastInferenceRef.current = Number.NEGATIVE_INFINITY
       lastVideoTimeRef.current = -1
-      resetCalibration()
-      frameRef.current = requestAnimationFrame(predict)
+      if (posture) {
+        resetCalibration()
+      } else {
+        // Gesture-only desktop control needs a live camera, but must not wait
+        // for the posture model or its calibration baseline.
+        baselineRef.current = null
+        updateStatus('away')
+        setPhase('monitoring')
+      }
+      if (posture) frameRef.current = requestAnimationFrame(predict)
       return true
     } catch (caught) {
       acquiredStream?.getTracks().forEach((track) => track.stop())
@@ -447,6 +466,7 @@ export function usePoseMonitor({
     predict,
     resetCalibration,
     setPhase,
+    updateStatus,
     videoDeviceId,
     videoRef,
   ])
@@ -464,7 +484,7 @@ export function usePoseMonitor({
   }, [clearCanvas, setPhase, videoRef])
 
   useEffect(() => {
-    if (phase !== 'monitoring') return
+    if (phase !== 'monitoring' || !postureActive) return
 
     const interval = window.setInterval(() => {
       const currentStatus = statusRef.current
@@ -511,7 +531,7 @@ export function usePoseMonitor({
     }, 1_000)
 
     return () => window.clearInterval(interval)
-  }, [onReminder, phase, settings])
+  }, [onReminder, phase, postureActive, settings])
 
   useEffect(() => {
     disposedRef.current = false
@@ -528,6 +548,7 @@ export function usePoseMonitor({
 
   return {
     phase,
+    postureActive,
     error,
     score,
     status,

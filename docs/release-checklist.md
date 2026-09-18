@@ -2,6 +2,10 @@
 
 ## 用户授权的未签名预览发布
 
+2026-09-19 最新授权：用户在要求默认 Windows 手势及加入语音后明确要求“更新后 push to main 并 publish 安装”。按此授权重新执行源码门禁、真实摄像头 Worker 探针及 CI 安装升级验证后发布和安装；保留真人准确率未验收、无可信签名的限制。下方此前“不推送/安装”的候选状态是历史记录，不代表新的发布结果。
+
+后续验收修订：用户要求所有较新发布都更新，且完成实机验收后才推送、安装。新客户端允许 prerelease 但不降级；发布 bundle 升至七项（增加经验证的 `latest.yml`、setup blockmap），新 tag 为裸 semver，避免旧带斜杠 tag 不兼容更新器。以下五项、manual-only 是已发布 `preview/v0.6.0` 的历史策略，保留历史资产不覆盖。正式签名流程不变，未签名渠道不会绕过内置签名验证或冒充可信发布者。
+
 2026-09-18 用户在获知无可信签名与未签名预览替代方案后要求直接发布。独立 `preview-release.yml` 仅允许从 main 手动运行；以 `preview/v<package version>` 命名且拒绝覆盖。它发布明确标注的 GitHub prerelease，`latest=false`，不上传 updater metadata 或 blockmap。签名正式发布门禁不变；预览不满足正式签名、保护规则或实机验收条件。
 
 预览精确五项资产为 setup、portable、SBOM、`preview-release.json`、`SHA256SUMS.txt`，由 GitHub Windows runner 构建并验证安装/升级/卸载后发布。发布后复核目标 commit、prerelease 标志、五项资产及 GitHub SHA-256 digest，确认正式 Latest 未变化。失败不覆盖资产；发现问题停止使用预览并手动回到既有正式版。
