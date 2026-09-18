@@ -17,7 +17,9 @@ describe('Windows SendInput native ABI', () => {
       '-Action',
       'volume_up',
       '-DryRun',
-    ], { encoding: 'utf8', windowsHide: true })
+    // Cold PowerShell/Add-Type compilation on hosted Windows can exceed 5s.
+    // Bound the child independently so a hung compiler still fails closed.
+    ], { encoding: 'utf8', windowsHide: true, timeout: 25_000 })
     const result = JSON.parse(output.trim())
     const abi = result.abi
     const expectedInputSize = abi.pointerSize === 8 ? 40 : 28
@@ -33,5 +35,5 @@ describe('Windows SendInput native ABI', () => {
       keyboardOffset: 0,
       hardwareOffset: 0,
     })
-  })
+  }, 30_000)
 })
