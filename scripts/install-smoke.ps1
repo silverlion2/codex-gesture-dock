@@ -11,6 +11,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot "windows-release-version.ps1")
 
 if (-not $env:CI -and -not $AllowLocalMachineChanges) {
   throw "Installer smoke tests change the current user's install registry. Run in CI or pass -AllowLocalMachineChanges explicitly."
@@ -79,10 +80,14 @@ try {
   if ($PreviousInstaller -and (Test-Path -LiteralPath $PreviousInstaller -PathType Leaf)) {
     $previousInfo = Get-Item -LiteralPath $PreviousInstaller
     $previousVersion = [string]$previousInfo.VersionInfo.ProductVersion
-    if ($previousVersion -and ([version]$previousVersion -lt [version]$version)) {
+    if (
+      $previousVersion -and
+      (ConvertTo-ReleaseVersion -Value $previousVersion) -lt
+        (ConvertTo-ReleaseVersion -Value $version)
+    ) {
       Invoke-Installer -Installer $previousInfo.FullName
       $installedPrevious = (Get-Item -LiteralPath $installedExecutable).VersionInfo.ProductVersion
-      if ([version]$installedPrevious -ne [version]$previousVersion) {
+      if (-not (Test-ReleaseVersionMatch -Actual $installedPrevious -Expected $previousVersion)) {
         throw "Previous installer produced version $installedPrevious instead of $previousVersion."
       }
       $upgradeTested = $true
@@ -92,7 +97,7 @@ try {
   Invoke-Installer -Installer $currentInstaller
 
   $installedInfo = Get-Item -LiteralPath $installedExecutable
-  if ([version]$installedInfo.VersionInfo.ProductVersion -ne [version]$version) {
+  if (-not (Test-ReleaseVersionMatch -Actual $installedInfo.VersionInfo.ProductVersion -Expected $version)) {
     throw "Installed executable version does not match package.json."
   }
   if (-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) {
@@ -103,7 +108,7 @@ try {
   if (-not $uninstallEntry) {
     throw "The current-user uninstall registry entry was not created."
   }
-  if ([version]$uninstallEntry.DisplayVersion -ne [version]$version) {
+  if (-not (Test-ReleaseVersionMatch -Actual $uninstallEntry.DisplayVersion -Expected $version)) {
     throw "Uninstall registry version does not match package.json."
   }
 

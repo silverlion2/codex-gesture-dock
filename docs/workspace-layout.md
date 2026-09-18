@@ -55,6 +55,7 @@ public/fonts/            可搜索 PDF 明确导出时按需载入的哈希固�
 tests/e2e/               Playwright Chromium 与 axe 测试
 tests/fixtures/          不含真实个人信息的本机 OCR/视觉回归样本
 scripts/                 构建、发布、签名、安装和审计脚本
+scripts/release-assets.mjs 发布资产唯一白名单、latest.yml 复核、SHA-256 清单与 manifest 生成边界
 docs/                    产品、架构、设计、测试和用户文档
 PROJECT_DESCRIPTION.md  面向贡献者与产品评估的英文项目定位、能力、隐私边界与技术概览
 docs/project-description-zh.md 中文项目定位、能力、隐私边界与技术概览
