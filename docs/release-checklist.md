@@ -4,6 +4,8 @@
 
 本节覆盖下方既有候选的历史勾选状态，不能把旧 CI/安装验证当作本次新增代码的证据。
 
+- 本地 `web-sop check --mode release` 已通过：类型、lint、394 项应用/Electron 测试、10 项发布 helper 测试、构建、5 项 Chromium E2E/无障碍检查及 npm audit（0 漏洞）。版本、许可证和 Windows 版本比较检查通过。
+- 最新源码 Electron smoke 通过：极简 78×78 且不可聚焦，恢复后可聚焦，急停阻断；本地报告 `work/electron-task-window-smoke.json`。这不是签名安装包或摄像头实机验收。
 - 已修正 SendInput 的原生 INPUT 联合体布局，并增加 Windows DryRun ABI 回归；DryRun 不代表真实键盘输入或摄像头手势已验证。
 - Windows 指令分类不再依赖六个手势绑定，保留音量和资源管理器语音命令；执行器拒绝把 DryRun 回执当作真实动作成功。
 - 正式发布仍被签名配置阻断：GitHub 仓库 Secrets/Variables 查询均为空，缺少 `WIN_CSC_LINK`、`WIN_CSC_KEY_PASSWORD`、`WIN_CSC_SUBJECT`。
