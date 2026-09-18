@@ -8,6 +8,7 @@
 | 动作 callback | 成功、非法动作、helper 错误、超时、急停、UIPI/前台限制均返回动作级结果；UI 不以监控事件冒充成功 | Unit + Electron + Component | 是 |
 | 极简模式 | 一键启动摄像头并进入 78×78，姿态/手势会话保持；Dock 不可聚焦；恢复入口可见 | Electron smoke + a11y + manual | 是 / 发布前实机 |
 | Windows 输入安全 | 固定参数、坐标边界、绝对 helper 路径、Dock PID 排除、SendInput/Win32 返回值一致性、无 shell 注入；失败关闭 | Unit + Electron integration | 是 |
+| 原生输入 ABI 与回执 | Windows PowerShell DryRun 验证 INPUT 联合体大小及成员偏移；拒绝 DryRun 充当真实执行成功；所有 Windows 语音命令不依赖固定手势映射分类 | Windows ABI + Unit | 是 / 不替代真实输入实机验证 |
 | 急停与权限 | 急停立即阻断动作并停止 helper；媒体拒绝、控制暂停、UIPI 或管理员边界显示可恢复失败态 | Unit + Electron + Windows manual | 是 / 发布前实机 |
 | 未实现能力边界 | 托盘驻留、任意按键/文本和任意窗口目标选择入口不存在或明确显示不支持 | Component + manual | 是 |
 

@@ -1,5 +1,16 @@
 # Codex Gesture Dock 发布清单
 
+## 2026-09-18 桌面手势候选状态
+
+本节覆盖下方既有候选的历史勾选状态，不能把旧 CI/安装验证当作本次新增代码的证据。
+
+- 已修正 SendInput 的原生 INPUT 联合体布局，并增加 Windows DryRun ABI 回归；DryRun 不代表真实键盘输入或摄像头手势已验证。
+- Windows 指令分类不再依赖六个手势绑定，保留音量和资源管理器语音命令；执行器拒绝把 DryRun 回执当作真实动作成功。
+- 正式发布仍被签名配置阻断：GitHub 仓库 Secrets/Variables 查询均为空，缺少 `WIN_CSC_LINK`、`WIN_CSC_KEY_PASSWORD`、`WIN_CSC_SUBJECT`。
+- GitHub `main` 和 `v*` 尚无保护规则；实机摄像头、真实前台窗口动作和签名更新验证仍待完成。
+- 不创建发布 tag，不覆盖既有 Release，不降级为未签名正式安装包。最近公开版本仍为 v0.5.0。
+- 用户本地未跟踪的 `optimization_plan.md` 不属于本次提交，保留不动。
+
 ## 候选源码
 
 - [ ] 工作树仅包含本次发布文件且已提交。
