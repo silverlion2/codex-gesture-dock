@@ -40,7 +40,7 @@ verified asset hashes for version 0.6.0; CI rejects stale output.
 | idb-keyval | 6.3.0 | Apache-2.0 |
 | iobuffer | 5.4.0 | MIT |
 | is-url | 1.2.4 | MIT |
-| js-yaml | 4.3.1 | MIT |
+| js-yaml | 4.3.2 | MIT |
 | jsonfile | 6.2.1 | MIT |
 | jspdf | 4.2.1 | MIT |
 | lazy-val | 1.0.5 | MIT |

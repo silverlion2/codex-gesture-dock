@@ -3002,7 +3002,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 ================================================================================
-js-yaml@4.3.1 — MIT
+js-yaml@4.3.2 — MIT
 Source file: LICENSE
 SHA-256 (first 12): bd470a9114ff
 ================================================================================

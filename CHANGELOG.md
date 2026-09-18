@@ -35,6 +35,8 @@ All notable changes to Codex Gesture Dock are documented here.
 
 ### Changed
 
+- Refresh compatible js-yaml, Joi, and Vitest dependencies and production
+  notices to clear the 2026-09-18 dependency audit findings.
 - The default test gate now includes every Electron/helper regression suite,
   with separate renderer/unit and Electron-only commands for fast diagnosis.
 - Camera, OCR, document, and image runtimes now load on demand through isolated
