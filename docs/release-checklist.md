@@ -1,5 +1,11 @@
 # Codex Gesture Dock 发布清单
 
+## 用户授权的未签名预览发布
+
+2026-09-18 用户在获知无可信签名与未签名预览替代方案后要求直接发布。独立 `preview-release.yml` 仅允许从 main 手动运行；以 `preview/v<package version>` 命名且拒绝覆盖。它发布明确标注的 GitHub prerelease，`latest=false`，不上传 updater metadata 或 blockmap。签名正式发布门禁不变；预览不满足正式签名、保护规则或实机验收条件。
+
+预览精确五项资产为 setup、portable、SBOM、`preview-release.json`、`SHA256SUMS.txt`，由 GitHub Windows runner 构建并验证安装/升级/卸载后发布。发布后复核目标 commit、prerelease 标志、五项资产及 GitHub SHA-256 digest，确认正式 Latest 未变化。失败不覆盖资产；发现问题停止使用预览并手动回到既有正式版。
+
 ## 2026-09-18 桌面手势候选状态
 
 本节覆盖下方既有候选的历史勾选状态，不能把旧 CI/安装验证当作本次新增代码的证据。

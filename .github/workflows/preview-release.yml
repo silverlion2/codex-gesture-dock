@@ -1,0 +1,119 @@
+name: Unsigned Preview Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  attestations: write
+  id-token: write
+
+concurrency:
+  group: unsigned-preview-release
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+      - name: Reject an existing preview tag
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Expected a stable package version.' }
+          $tag = "preview/v$version"
+          $existing = git ls-remote --tags origin "refs/tags/$tag"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not inspect remote tags.' }
+          if ($existing) { throw "Preview tag $tag already exists; do not overwrite releases." }
+          $stable = gh api "repos/$env:GH_REPO/releases/latest" --jq '.tag_name'
+          if ($LASTEXITCODE -ne 0 -or -not $stable) { throw 'Could not establish current stable release.' }
+          "STABLE_RELEASE_TAG=$stable" >> $env:GITHUB_ENV
+      - run: npm ci
+      - run: npm audit --audit-level=high --registry=https://registry.npmjs.org
+      - run: npm run version:check
+      - run: npm run licenses:check
+      - run: npm test
+      - run: npm run release:test:win
+      - run: npm run lint
+      - name: Build explicitly unsigned preview
+        run: npm run dist:win
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - run: npm run sbom:generate
+      - run: npm run release:evidence
+      - run: npm run verify:win-artifacts
+      - run: npm run desktop:smoke:packaged
+      - name: Download previous public installer
+        id: previous
+        shell: pwsh
+        run: ./scripts/download-previous-installer.ps1 -Repository $env:GH_REPO -AllowMissing
+      - name: Verify preview install, upgrade, and uninstall
+        shell: pwsh
+        env:
+          PREVIOUS_INSTALLER: ${{ steps.previous.outputs.path }}
+        run: ./scripts/install-smoke.ps1 -PreviousInstaller $env:PREVIOUS_INSTALLER
+      - name: Prepare manual-download assets without updater metadata
+        shell: pwsh
+        run: ./scripts/prepare-preview.ps1
+      - name: Attest preview build origin (not Authenticode)
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
+        with:
+          subject-path: artifacts/preview/*
+      - name: Publish an unsigned prerelease, never latest
+        shell: pwsh
+        run: |
+          $manifest = Get-Content artifacts/preview/preview-release.json -Raw | ConvertFrom-Json
+          $tag = [string]$manifest.tag
+          $files = @($manifest.assets | ForEach-Object { "artifacts/preview/$($_.name)" })
+          $files += 'artifacts/preview/preview-release.json', 'artifacts/preview/SHA256SUMS.txt'
+          if ($files.Count -ne 5) { throw 'Unexpected preview asset count.' }
+          gh release create $tag @files --target $env:GITHUB_SHA --draft --prerelease --latest=false --title "Codex Gesture Dock $($manifest.version) — unsigned preview / 未签名预览版" --notes-file docs/unsigned-preview-notes.md
+          if ($LASTEXITCODE -ne 0) { throw 'Preview draft creation failed.' }
+          $draftJson = gh release view $tag --json databaseId
+          if ($LASTEXITCODE -ne 0) { throw 'Could not locate preview draft.' }
+          $releaseId = ($draftJson | ConvertFrom-Json).databaseId
+          $releaseJson = gh api "repos/$env:GH_REPO/releases/$releaseId"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not verify uploaded assets.' }
+          $release = $releaseJson | ConvertFrom-Json
+          if (-not $release.prerelease -or -not $release.draft -or $release.assets.Count -ne 5) { throw 'Unexpected draft state.' }
+          foreach ($file in $files) {
+            $name = Split-Path $file -Leaf
+            $remote = @($release.assets | Where-Object { $_.name -eq $name })
+            $hash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($remote.Count -ne 1 -or $remote[0].digest -ne "sha256:$hash" -or $remote[0].size -ne (Get-Item $file).Length) {
+              throw "Uploaded preview asset mismatch: $name"
+            }
+          }
+          gh release edit $tag --draft=false --prerelease --latest=false
+          if ($LASTEXITCODE -ne 0) { throw 'Preview publication failed.' }
+          $publishedJson = gh api "repos/$env:GH_REPO/releases/$releaseId"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not verify published release.' }
+          $published = $publishedJson | ConvertFrom-Json
+          if ($published.draft -or -not $published.prerelease -or $published.assets.Count -ne 5) { throw 'Unexpected published state.' }
+          $stable = gh api "repos/$env:GH_REPO/releases/latest" --jq '.tag_name'
+          if ($LASTEXITCODE -ne 0 -or $stable -ne $env:STABLE_RELEASE_TAG) { throw 'Stable latest release changed unexpectedly.' }
+          Write-Output $published.html_url
+      - name: Preserve verification reports
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: unsigned-preview-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            artifacts/preview/preview-release.json
+            artifacts/preview/SHA256SUMS.txt
+            work/windows-artifact-verification.json
+            work/windows-install-verification.json
+            work/electron-smoke.json
+            work/electron-task-window-smoke.json
