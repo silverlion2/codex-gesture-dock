@@ -9812,7 +9812,7 @@ html.electron-runtime.task-window body {
 .desktop-camera-help p { margin: 8px 0 0; color: #536059; font-size: 13px; line-height: 1.7; }
 .optional-posture-control button { min-height: 44px; margin-top: 8px; padding: 8px 12px; border: 1px solid #cbd6ce; border-radius: 8px; color: #244c34; background: white; cursor: pointer; font-size: 12px; }
 .is-windows-workspace .dashboard-monitor { overflow-y: auto; }
-.is-expanded .is-windows-workspace .dashboard-monitor .compact-camera { min-height: 230px; }
+.is-expanded .is-windows-workspace .dashboard-monitor .compact-camera { min-height: 260px; }
 
 @media (max-width: 860px) {
   .is-expanded .widget-content.is-windows-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: max-content max-content; align-content: start; overflow-y: auto; }

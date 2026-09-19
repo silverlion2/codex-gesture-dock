@@ -121,6 +121,16 @@ test('expanded dashboard stays within a narrow web viewport', async ({ page }) =
   await expectAccessible(page)
 })
 
+test('camera stays usable at the small Windows runner work area', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 720 })
+  await page.goto('/?mockTasks=1')
+  const camera = await page.locator('.compact-camera').boundingBox()
+  expect(camera?.width ?? 0).toBeGreaterThan(300)
+  expect(camera?.height ?? 0).toBeGreaterThan(240)
+  await expect(page.getByRole('button', { name: '一键启动极简 Windows 桌面手势控制' })).toBeVisible()
+  await expectAccessible(page)
+})
+
 test('compact camera dock meets automated accessibility rules', async ({ page }) => {
   await page.setViewportSize({ width: 348, height: 360 })
   await page.goto('/?widget=collapsed')
