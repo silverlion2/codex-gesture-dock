@@ -95,7 +95,7 @@ export function usePoseMonitor({
   const [todayRatio, setTodayRatio] = useState(() =>
     ratioFromStats(loadDailyStats()),
   )
-  const [postureActive, setPostureActive] = useState(true)
+  const [postureActive, setPostureActive] = useState(false)
 
   const phaseRef = useRef<MonitorPhase>('idle')
   const statusRef = useRef<PostureStatus>('away')
@@ -375,7 +375,7 @@ export function usePoseMonitor({
     deviceOverride?: string,
     options: StartSessionOptions = {},
   ) => {
-    const posture = options.posture ?? true
+    const posture = options.posture ?? false
     const requestId = ++sessionRequestRef.current
     const requestedDeviceId = deviceOverride ?? videoDeviceId
     let acquiredStream: MediaStream | null = null

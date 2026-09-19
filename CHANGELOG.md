@@ -4,6 +4,18 @@ All notable changes to Codex Gesture Dock are documented here.
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-09-19
+
+### Changed
+
+- Make Windows gesture startup, pause, six complete gesture instructions, and real execution feedback the primary desktop workflow.
+- Explain exact finger positions and window effects; remove conflicting Codex microphone hints from Windows mode and separate voice commands from microphone level controls.
+- Default camera sessions to hand-only operation without loading the posture model or requiring body calibration. Keep posture monitoring as a separate explicit opt-in; leave posture processing when switching to other tools or gesture modes.
+- Improve narrow-window layout, preserve compact and minimal controls, and add regression coverage for the default hand-only path.
+- Publish through the explicitly unsigned all-release update channel. This release does not claim trusted Authenticode signing or human gesture accuracy validation.
+
+## [0.6.1] - 2026-09-18
+
 ### 0.6.1 — Windows-first gestures and offline voice
 
 - Start minimal Windows gestures directly from the camera without posture-model calibration; wait for actual gesture readiness before collapsing.

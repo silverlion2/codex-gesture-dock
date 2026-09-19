@@ -38,6 +38,9 @@ interface CompactCameraProps {
   scanPhase: CodeScannerPhase
   faceMaskStyle: FaceMaskStyle
   visible: boolean
+  desktopGestureMode?: boolean
+  postureRequested?: boolean
+  postureActive?: boolean
   onMirrorToggle: () => void
   onRecalibrate: () => void
 }
@@ -57,6 +60,9 @@ export function CompactCamera({
   scanPhase,
   faceMaskStyle,
   visible,
+  desktopGestureMode = false,
+  postureRequested = true,
+  postureActive = true,
   onMirrorToggle,
   onRecalibrate,
 }: CompactCameraProps) {
@@ -110,8 +116,8 @@ export function CompactCamera({
       {!fileMode && phase === 'idle' && (
         <div className="camera-placeholder">
           <Camera size={28} aria-hidden="true" />
-          <strong>准备开始</strong>
-          <span>坐直后点击下方开始监测</span>
+          <strong>{desktopGestureMode || !postureRequested ? '摄像头尚未开启' : '准备开始'}</strong>
+          <span>{desktopGestureMode ? '点击“启动手势”，只需一只手入镜，无需坐姿校准' : !postureRequested ? '开启摄像头即可使用当前功能，无需坐姿校准' : '坐直后点击下方开始监测'}</span>
         </div>
       )}
 
@@ -148,7 +154,7 @@ export function CompactCamera({
         </div>
       )}
 
-      {phase === 'monitoring' && mode === 'monitor' && (
+      {phase === 'monitoring' && mode === 'monitor' && postureActive && (
         <>
           <div className={`camera-status status-${status}`} aria-live="polite">
             <span />
@@ -181,7 +187,7 @@ export function CompactCamera({
                     ? '松开手势以继续'
                     : gesture.binding
                       ? `${gesture.binding.symbol} ${gesture.binding.actionLabel}`
-                      : '等待 Codex 手势'}
+                      : '等待手势'}
             </strong>
             <i aria-hidden="true">
               <b style={{ width: `${gesture.progress * 100}%` }} />

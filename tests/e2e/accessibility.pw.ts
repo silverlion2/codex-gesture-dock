@@ -23,6 +23,7 @@ test('expanded dashboard meets automated accessibility rules', async ({ page }) 
   await expect(
     page.getByRole('region', { name: 'Codex Gesture Dock 控制面板' }),
   ).toBeVisible()
+  await page.getByText('摄像头、画面与麦克风电平设置', { exact: true }).click()
   await expect(
     page.getByRole('region', { name: '摄像头与麦克风控制' }),
   ).toBeVisible()
@@ -48,6 +49,7 @@ test('expanded dashboard meets automated accessibility rules', async ({ page }) 
   )
   await expectAccessible(page)
 
+  await page.getByText('更多镜头工具', { exact: true }).click()
   await page.getByRole('button', { name: '面具' }).click()
   await expect(page.getByRole('region', { name: '表情动态面具' })).toBeVisible()
   await expect(page.getByRole('radio', { name: /霓虹狐/ })).toHaveAttribute(
@@ -94,7 +96,7 @@ test('expanded dashboard stays within a narrow web viewport', async ({ page }) =
   await expect(
     page.getByRole('region', { name: 'Codex Gesture Dock 控制面板' }),
   ).toBeVisible()
-  await expect(page.getByRole('button', { name: '姿态' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '用手势，操作桌面' })).toBeVisible()
   await expect(
     page.locator('.window-actions').getByRole('button', {
       name: '暂停 Windows 控制',
@@ -110,6 +112,12 @@ test('expanded dashboard stays within a narrow web viewport', async ({ page }) =
   }))
   expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewportWidth)
   expect(layout.contentColumns).toBe(1)
+  const sections = await page.locator('.is-windows-workspace').evaluate((workspace) => {
+    const guide = workspace.querySelector('.windows-controls')!.getBoundingClientRect()
+    const camera = workspace.querySelector('.dashboard-monitor')!.getBoundingClientRect()
+    return { guideBottom: guide.bottom, cameraTop: camera.top }
+  })
+  expect(sections.cameraTop).toBeGreaterThanOrEqual(sections.guideBottom)
   await expectAccessible(page)
 })
 
@@ -121,7 +129,7 @@ test('compact camera dock meets automated accessibility rules', async ({ page })
     page.getByRole('region', { name: 'Codex Gesture Dock 迷你摄像头' }),
   ).toBeVisible()
   await expect(page.getByRole('button', { name: '打开完整控制面板' })).toBeVisible()
-  await expect(page.getByRole('button', { name: '开始监测' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '开启摄像头' })).toBeVisible()
   await expect(page.getByRole('button', { name: '打开麦克风' })).toBeVisible()
   await expectAccessible(page)
 

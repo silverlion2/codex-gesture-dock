@@ -90,7 +90,7 @@ describe('usePoseMonitor camera loop', () => {
       }),
     )
 
-    await act(async () => result.current.startSession())
+    await act(async () => result.current.startSession(undefined, { posture: true }))
     expect(animationFrames).toHaveLength(1)
 
     act(() => animationFrames.shift()?.(16))
@@ -134,7 +134,7 @@ describe('usePoseMonitor camera loop', () => {
       }),
     )
 
-    await act(async () => result.current.startSession())
+    await act(async () => result.current.startSession(undefined, { posture: true }))
 
     expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
       video: {
@@ -174,6 +174,69 @@ describe('usePoseMonitor camera loop', () => {
 
     expect(result.current.phase).toBe('monitoring')
     expect(createFromOptions).not.toHaveBeenCalled()
+    unmount()
+  })
+
+  it('defaults to a gesture-only camera session without loading posture or calibration', async () => {
+    const video = document.createElement('video')
+    Object.defineProperties(video, {
+      play: { configurable: true, value: vi.fn(async () => undefined) },
+      readyState: {
+        configurable: true,
+        get: () => HTMLMediaElement.HAVE_CURRENT_DATA,
+      },
+    })
+    const createFromOptions = vi.mocked(
+      (await import('@mediapipe/tasks-vision')).PoseLandmarker.createFromOptions,
+    )
+    createFromOptions.mockClear()
+    const { result, unmount } = renderHook(() =>
+      usePoseMonitor({
+        videoRef: { current: video },
+        canvasRef: { current: null },
+        settings,
+        onReminder: vi.fn(),
+      }),
+    )
+
+    expect(result.current.postureActive).toBe(false)
+    await act(async () => result.current.startSession())
+
+    expect(result.current.phase).toBe('monitoring')
+    expect(result.current.postureActive).toBe(false)
+    expect(createFromOptions).not.toHaveBeenCalled()
+    unmount()
+  })
+
+  it('loads and calibrates posture only when explicitly opted in', async () => {
+    const video = document.createElement('video')
+    Object.defineProperties(video, {
+      play: { configurable: true, value: vi.fn(async () => undefined) },
+      readyState: {
+        configurable: true,
+        get: () => HTMLMediaElement.HAVE_CURRENT_DATA,
+      },
+    })
+    const createFromOptions = vi.mocked(
+      (await import('@mediapipe/tasks-vision')).PoseLandmarker.createFromOptions,
+    )
+    createFromOptions.mockClear()
+    const { result, unmount } = renderHook(() =>
+      usePoseMonitor({
+        videoRef: { current: video },
+        canvasRef: { current: null },
+        settings,
+        onReminder: vi.fn(),
+      }),
+    )
+
+    await act(async () =>
+      result.current.startSession(undefined, { posture: true })
+    )
+
+    expect(result.current.phase).toBe('calibrating')
+    expect(result.current.postureActive).toBe(true)
+    expect(createFromOptions).toHaveBeenCalledTimes(1)
     unmount()
   })
 })

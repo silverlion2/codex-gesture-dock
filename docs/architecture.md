@@ -1,5 +1,11 @@
 # Codex Gesture Dock 架构
 
+## 2026-09-19 控制界面分层
+
+WindowsGesturePanel 仅组合展示与回调；App 继续持有摄像头、模式、原生急停、语音与真实动作结果。GestureBook 将摄像头未启动、控制暂停、模型状态和识别候选分开呈现；不得把候选识别当作 Win32 执行确认。原生尺寸、动作白名单及权限边界不变。
+
+usePoseMonitor 的初始 postureActive 与 startSession 默认 posture 均为 false；普通摄像头会话不加载 PoseLandmarker、不进入坐姿校准/推理。仅显式 posture:true 启用。App 的独立坐姿入口/姿态语音命令主动传 true；设备切换保留当前会话选项，切换其他工具或手势模式恢复 false。
+
 ## 2026-09-19 手势与语音增强
 
 手势模式使用 v2 偏好键，缺失/非法/存储不可用时回退 Windows。MediaPipe 保留现有离线模型与固定动作桥；按官方示例将推理移至单帧在途 Worker，取消/隐藏后丢弃旧结果、释放帧、超时失败关闭，不上传图像。空中鼠标采用速度自适应 One Euro 低通滤波，失手/暂停后重置，不改变点击白名单。固定手势用实际连续样本和最大帧间隔验证保持时间，避免卡顿前后两帧被当作持续保持。语音沿用 Windows 本机 System.Speech 固定语法、唤醒前缀和限流，补齐 Windows 动作，麦克风默认为关闭。来源与许可记录在开源方案地图。

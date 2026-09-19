@@ -1,4 +1,4 @@
-import { GripHorizontal, Mic, PersonStanding } from 'lucide-react'
+import { GripHorizontal, Hand, Mic, PersonStanding } from 'lucide-react'
 import type { MonitorPhase } from '../hooks/usePoseMonitor'
 import type { PostureStatus } from '../lib/posture'
 
@@ -51,11 +51,13 @@ export function FloatingButton({
         className="floating-button"
         type="button"
         aria-label={label}
-        title="恢复迷你摄像头 Dock"
+        title={label}
         onClick={onExpand}
       >
         {monitoring && postureActive && score !== null ? (
           <strong>{score}</strong>
+        ) : gestureActive && !postureActive ? (
+          <Hand size={28} strokeWidth={1.8} aria-hidden="true" />
         ) : (
           <PersonStanding size={28} strokeWidth={1.8} aria-hidden="true" />
         )}

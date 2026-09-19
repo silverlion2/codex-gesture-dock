@@ -84,7 +84,7 @@ describe('usePoseMonitor saving policy', () => {
       }),
     )
 
-    await act(async () => result.current.startSession())
+    await act(async () => result.current.startSession(undefined, { posture: true }))
     videoTime = 0.1
     act(() => animationFrames.shift()?.(16))
     expect(mediaPipe.detectForVideo).toHaveBeenCalledTimes(1)

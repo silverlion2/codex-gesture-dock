@@ -19,6 +19,7 @@ import { CodexIntegrationPanel } from './components/CodexIntegrationPanel'
 import { CompactCamera } from './components/CompactCamera'
 import { CameraModeSwitcher } from './components/CameraModeSwitcher'
 import { GestureBook } from './components/GestureBook'
+import { WindowsGesturePanel } from './components/WindowsGesturePanel'
 import { FloatingButton } from './components/FloatingButton'
 import {
   CompactMediaControls,
@@ -116,7 +117,7 @@ const toolLoadingFallback = (
 )
 
 const initialSettings: ReminderSettings = {
-  postureEnabled: true,
+  postureEnabled: false,
   sensitivity: 'medium',
   breakEnabled: true,
   breakMinutes: 50,
@@ -397,7 +398,7 @@ function WidgetApp() {
     minimalWindowsStartRef.current = true
     setMinimalWindowsStarting(true)
     setGestureMode('windows')
-    setSettings((current) => ({ ...current, gestureEnabled: true }))
+    setSettings((current) => ({ ...current, gestureEnabled: true, postureEnabled: false }))
     setCameraMode('monitor')
 
     try {
@@ -496,13 +497,15 @@ function WidgetApp() {
         return
       }
       if (command.action === 'start_monitoring') {
-        if (['loading', 'calibrating', 'monitoring'].includes(monitorPhase)) {
+        if (['loading', 'calibrating', 'monitoring'].includes(monitorPhase) && monitor.postureActive) {
           showReminder('姿态监测已在运行')
           return
         }
         changeViewMode('expanded')
         showReminder('语音命令：正在启动姿态监测')
-        void startMonitorSession()
+        setSettings((current) => ({ ...current, postureEnabled: true }))
+        setCameraMode('monitor')
+        void startMonitorSession(undefined, { posture: true })
         return
       }
       if (command.action === 'stop_monitoring') {
@@ -534,6 +537,7 @@ function WidgetApp() {
     [
       changeViewMode,
       monitorPhase,
+      monitor.postureActive,
       openTaskPicker,
       runGestureAction,
       setVoiceControlEnabled,
@@ -863,9 +867,10 @@ function WidgetApp() {
   const sessionActive = ['loading', 'calibrating', 'monitoring'].includes(
     monitor.phase,
   )
+  const windowsWorkspace = expanded && cameraMode === 'monitor' && gestureMode === 'windows'
   const actionLabel =
     monitor.phase === 'idle'
-      ? '开始监测'
+      ? settings.postureEnabled && cameraMode === 'monitor' ? '开始监测' : '开启摄像头'
       : monitor.phase === 'ended'
         ? '再次开始'
         : monitor.phase === 'error'
@@ -874,12 +879,35 @@ function WidgetApp() {
 
   const handlePrimaryAction = () => {
     if (sessionActive) monitor.stopSession()
-    else void monitor.startSession()
+    else void monitor.startSession(undefined, { posture: cameraMode === 'monitor' && settings.postureEnabled })
+  }
+
+  const handleSettingsChange = (next: ReminderSettings) => {
+    setSettings(next)
+    if (sessionActive && cameraMode === 'monitor' && next.postureEnabled !== settings.postureEnabled) {
+      void monitor.startSession(undefined, { posture: next.postureEnabled })
+    }
   }
 
   const handleVideoDeviceChange = (deviceId: string) => {
     setMediaPreferences((current) => ({ ...current, videoDeviceId: deviceId }))
-    if (sessionActive) void monitor.startSession(deviceId)
+    if (sessionActive) void monitor.startSession(deviceId, { posture: cameraMode === 'monitor' && monitor.postureActive })
+  }
+
+  const handleCameraModeChange = (mode: CameraMode) => {
+    setCameraMode(mode)
+    if (mode !== 'monitor') {
+      setSettings((current) => ({ ...current, postureEnabled: false }))
+      if (sessionActive && monitor.postureActive) void monitor.startSession(undefined, { posture: false })
+    }
+  }
+
+  const handleGestureModeChange = (mode: GestureMode) => {
+    setGestureMode(mode)
+    if (mode !== gestureMode) {
+      setSettings((current) => ({ ...current, postureEnabled: false }))
+      if (sessionActive && monitor.postureActive) void monitor.startSession(undefined, { posture: false })
+    }
   }
 
   const handleAudioDeviceChange = (deviceId: string) => {
@@ -1002,7 +1030,7 @@ function WidgetApp() {
             >
               <Maximize2 size={17} aria-hidden="true" />
             </button>
-            <button
+            {!windowsWorkspace && <button
               type="button"
               aria-label="一键启动极简 Windows 桌面手势控制"
               title="启动摄像头并进入极简 Windows 手势控制"
@@ -1010,8 +1038,8 @@ function WidgetApp() {
               onClick={() => void startMinimalWindowsControl()}
             >
               <Hand size={18} aria-hidden="true" />
-            </button>
-            <button
+            </button>}
+            {!windowsWorkspace && <button
               className="voice-control-toggle"
               type="button"
               aria-label={voiceStatus.enabled ? '关闭语音控制' : '开启语音控制'}
@@ -1021,7 +1049,7 @@ function WidgetApp() {
               onClick={() => void setVoiceControlEnabled(!voiceStatus.enabled)}
             >
               <Mic size={18} aria-hidden="true" />
-            </button>
+            </button>}
             <button
               className="expanded-only"
               type="button"
@@ -1061,18 +1089,48 @@ function WidgetApp() {
           </div>
         </header>
 
-        <div className="widget-content">
+        <div className={`widget-content ${windowsWorkspace ? 'is-windows-workspace' : ''}`}>
+          {windowsWorkspace && <aside className="dashboard-controls windows-controls" aria-label="桌面控制与手势指南">
+            <WindowsGesturePanel
+              gesture={gesture}
+              gestureEnabled={settings.gestureEnabled}
+              cameraActive={sessionActive}
+              starting={minimalWindowsStarting}
+              paused={integrationStatus?.control?.enabled === false}
+              controlBusy={windowsControlBusy}
+              desktopAvailable={Boolean(window.widgetControls)}
+              feedback={desktopActionFeedback}
+              voice={voiceStatus}
+              onStart={() => {
+                if (monitor.phase === 'monitoring' && gesture.modelPhase === 'ready' && settings.gestureEnabled && integrationStatus?.control?.enabled !== false) minimizeScreenUsage()
+                else void startMinimalWindowsControl()
+              }}
+              onStop={monitor.stopSession}
+              onPause={() => void setWindowsControlEnabled(!(integrationStatus?.control?.enabled ?? true))}
+              onVoiceToggle={() => void setVoiceControlEnabled(!voiceStatus.enabled)}
+              onModeChange={handleGestureModeChange}
+            />
+            {settingsOpen && <WidgetSettings settings={settings} gestureMode={gestureMode} voiceStatus={voiceStatus} onChange={handleSettingsChange} onGestureModeChange={handleGestureModeChange} onVoiceEnabledChange={setVoiceControlEnabled} />}
+            {currentApproval && <CodexApprovalPanel busy={approvalBusy} request={currentApproval} onDecision={(decision) => void respondCodexApproval(decision)} />}
+          </aside>}
           <section className="dashboard-monitor" aria-label="实时摄像头与坐姿数据">
             <header className="dashboard-section-heading camera-workspace-heading">
               <div>
                 <span className="live-indicator" aria-hidden="true" />
                 实时镜头
               </div>
-              <CameraModeSwitcher mode={cameraMode} onChange={setCameraMode} />
+              {windowsWorkspace ? <details className="desktop-camera-tools">
+                <summary>更多镜头工具</summary>
+                <CameraModeSwitcher mode={cameraMode} onChange={handleCameraModeChange} />
+              </details> : <CameraModeSwitcher mode={cameraMode} onChange={handleCameraModeChange} />}
             </header>
 
             {expanded && cameraMode !== 'ocr' && cameraMode !== 'card' && cameraMode !== 'privacy' && cameraMode !== 'background' && cameraMode !== 'compare' && cameraMode !== 'colors' ? (
-              <MediaInputPanel {...mediaControlProps} />
+              windowsWorkspace ? <details className="desktop-device-settings">
+                <summary>摄像头、画面与麦克风电平设置</summary>
+                <MediaInputPanel {...mediaControlProps} />
+                <p>这里的麦克风开关仅用于查看输入电平，不会开启语音控制。</p>
+              </details> : <MediaInputPanel {...mediaControlProps} />
             ) : null}
 
             <CompactCamera
@@ -1090,6 +1148,9 @@ function WidgetApp() {
               scanPhase={codeScanner.phase}
               faceMaskStyle={faceMaskStyle}
               visible={!screenUsageMinimized}
+              desktopGestureMode={gestureMode === 'windows' && cameraMode === 'monitor'}
+              postureRequested={settings.postureEnabled && cameraMode === 'monitor'}
+              postureActive={monitor.postureActive}
               onMirrorToggle={() =>
                 setMediaPreferences((current) => ({
                   ...current,
@@ -1099,24 +1160,24 @@ function WidgetApp() {
               onRecalibrate={monitor.recalibrate}
             />
 
-            {expanded && cameraMode === 'monitor' && (
-              <section className="current-task-hero" aria-label="当前 Codex 任务">
+            {expanded && cameraMode === 'monitor' && gestureMode !== 'windows' && (
+              <section className="current-task-hero" aria-label={gestureMode === 'pointer' ? '空中鼠标控制' : '当前 Codex 任务'}>
                 <div>
-                  <span>当前任务</span>
+                  <span>{gestureMode === 'pointer' ? '仅识别手部' : '当前任务'}</span>
                   <strong>
-                    {integrationStatus?.boundTask?.title || '选择一个 Codex 任务'}
+                    {gestureMode === 'pointer' ? '用手移动指针、单击和滚动' : integrationStatus?.boundTask?.title || '选择一个 Codex 任务'}
                   </strong>
                   <small>
-                    {integrationStatus?.boundTask
+                    {gestureMode === 'pointer' ? '无需绑定任务，无需坐姿校准；收手即可停止指针' : integrationStatus?.boundTask
                       ? `${integrationStatus.boundTask.project} · 手势与任务保持同步`
                       : '绑定任务后，可用手势继续对话、审查代码或切换终端'}
                   </small>
                 </div>
                 <div className="current-task-actions">
-                  <button type="button" onClick={openTaskPicker}>
+                  {gestureMode === 'codex' && <button type="button" onClick={openTaskPicker}>
                     <ListTodo size={17} aria-hidden="true" />
                     {taskPickerOpen ? '任务窗口已打开' : '打开任务'}
-                  </button>
+                  </button>}
                   <button
                     className="session-toggle-secondary"
                     type="button"
@@ -1148,7 +1209,7 @@ function WidgetApp() {
               />
             ) : cameraMode === 'monitor' ? (
               <>
-                {monitor.postureActive ? <div className="monitor-data-grid">
+                {monitor.postureActive && (!windowsWorkspace || sessionActive) ? <div className="monitor-data-grid">
                   <WidgetMetrics
                     score={monitor.score}
                     status={monitor.status}
@@ -1156,7 +1217,26 @@ function WidgetApp() {
                     awayCount={monitor.awayCount}
                     trend={monitor.trend}
                   />
-                </div> : <p role="status">仅手势控制，坐姿监测未启用</p>}
+                </div> : !windowsWorkspace ? <p role="status">仅手势控制，坐姿监测未启用</p> : null}
+
+                {windowsWorkspace && <section className="desktop-camera-help" aria-label="取景与使用说明">
+                  <h2>先看懂手势，再缩小窗口</h2>
+                  <p>手掌完整入镜，保持约 0.85 秒。每次动作后移开手，再做下一个手势。</p>
+                  <p>“最小化当前窗口”操作的是你正在使用的程序；悬浮球只缩小本控制面板。</p>
+                  <details className="optional-posture-control">
+                    <summary>可选功能：坐姿提醒</summary>
+                    <p>默认不检测身体。只有开启此功能，才需要头部与双肩入镜并校准坐姿。</p>
+                    <button type="button" onClick={() => {
+                      const posture = !monitor.postureActive || !sessionActive
+                      setSettings((current) => ({ ...current, postureEnabled: posture }))
+                      void monitor.startSession(undefined, { posture })
+                    }}>{monitor.postureActive && sessionActive ? '关闭坐姿提醒，仅识别手势' : '开启坐姿提醒并校准'}</button>
+                  </details>
+                  <details>
+                    <summary>连接与更新状态</summary>
+                    <CodexIntegrationPanel status={integrationStatus} controlBusy={windowsControlBusy} updateStatus={updateStatus} onUpdateAction={() => void runUpdateAction()} onWindowsControlToggle={(enabled) => void setWindowsControlEnabled(enabled)} />
+                  </details>
+                </section>}
 
               </>
             ) : cameraMode === 'codes' || cameraMode === 'document' ? (
@@ -1218,17 +1298,24 @@ function WidgetApp() {
             )}
           </section>
 
-          {expanded && <aside className="dashboard-controls" aria-label="手势手册与会话控制">
+          {expanded && !windowsWorkspace && <aside className="dashboard-controls" aria-label="手势手册与会话控制">
+            <label className="desktop-mode-select">控制模式
+              <select value={gestureMode} onChange={(event) => handleGestureModeChange(event.target.value as GestureMode)}>
+                <option value="windows">Windows 窗口</option>
+                <option value="pointer">空中鼠标</option>
+                <option value="codex">Codex 任务</option>
+              </select>
+            </label>
             {cameraMode === 'monitor' && settingsOpen ? (
               <WidgetSettings
                 settings={settings}
                 gestureMode={gestureMode}
                 voiceStatus={voiceStatus}
-                onChange={setSettings}
-                onGestureModeChange={setGestureMode}
+                onChange={handleSettingsChange}
+                onGestureModeChange={handleGestureModeChange}
                 onVoiceEnabledChange={setVoiceControlEnabled}
               />
-            ) : cameraMode === 'monitor' ? (
+            ) : cameraMode === 'monitor' && monitor.postureActive ? (
               <section className={`posture-overview status-${monitor.status}`} aria-label="当前坐姿状态">
                 <div>
                   <span>姿势状态</span>
@@ -1278,7 +1365,7 @@ function WidgetApp() {
                     void setWindowsControlEnabled(enabled)
                   }
                 />
-                <div className={`microphone-status ${codexMicrophoneActive ? 'is-active' : ''}`}>
+                {gestureMode === 'codex' && <div className={`microphone-status ${codexMicrophoneActive ? 'is-active' : ''}`}>
                   <Mic size={16} aria-hidden="true" />
                   <span>
                     <strong>
@@ -1286,7 +1373,7 @@ function WidgetApp() {
                     </strong>
                     <small>食指向上保持 0.85 秒</small>
                   </span>
-                </div>
+                </div>}
               </section>
             )}
           </aside>}

@@ -111,7 +111,7 @@ export function MiniCameraControls({
 
   if (mode === 'monitor') {
     return (
-      <section className="mini-camera-controls" aria-label="迷你姿态控制">
+      <section className="mini-camera-controls" aria-label={postureActive ? '迷你姿态控制' : '迷你手势控制'}>
         <div className={`mini-camera-reading status-${status}`} aria-live="polite">
           <span className="mini-status-dot" aria-hidden="true" />
           <div>

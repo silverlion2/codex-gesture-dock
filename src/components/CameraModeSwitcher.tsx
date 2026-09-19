@@ -1,4 +1,4 @@
-import { ContactRound, EyeOff, FileScan, FileText, GitCompare, ImageMinus, Palette, ScanFace, ScanLine, ScanSearch, UserRoundCheck } from 'lucide-react'
+import { ContactRound, EyeOff, FileScan, FileText, GitCompare, Hand, ImageMinus, Palette, ScanFace, ScanLine, ScanSearch } from 'lucide-react'
 import type { CameraMode } from '../lib/cameraTools'
 
 interface CameraModeSwitcherProps {
@@ -6,7 +6,7 @@ interface CameraModeSwitcherProps {
   onChange: (mode: CameraMode) => void
 }
 const modes = [
-  { id: 'monitor', label: '姿态', icon: UserRoundCheck },
+  { id: 'monitor', label: '手势', icon: Hand },
   { id: 'masks', label: '面具', icon: ScanFace },
   { id: 'codes', label: '扫码', icon: ScanLine },
   { id: 'document', label: '文档', icon: FileScan },

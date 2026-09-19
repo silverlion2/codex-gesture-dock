@@ -134,7 +134,7 @@ describe('App voice command routing', () => {
     expect(screen.getByRole('main').className).toContain('is-minimal')
     hooks.voiceCommand?.({ action: 'start_windows_gestures', phrase: '助手 开启手势', confidence: 1, timestamp: 4 })
     await waitFor(() => expect(controls.setWindowsControlEnabled).toHaveBeenCalledWith(true))
-    expect(hooks.startMonitorSession).toHaveBeenCalled()
+    expect(hooks.startMonitorSession).toHaveBeenCalledWith(undefined, { posture: false })
   })
 
   it('keeps voice opt-in, routes header enable, and surfaces status errors', async () => {
@@ -146,5 +146,21 @@ describe('App voice command routing', () => {
     await waitFor(() => expect(controls.setVoiceControlEnabled).toHaveBeenCalledWith(true))
     hooks.voiceStatus?.({ enabled: false, supported: true, phase: 'error', culture: '', recognizer: '', message: '语音识别失败' })
     expect(await screen.findByText('语音识别失败')).toBeTruthy()
+  })
+
+  it('makes posture an explicit opt-in independent of Windows hands', async () => {
+    const controls = controlsFixture()
+    window.widgetControls = controls as unknown as NonNullable<Window['widgetControls']>
+    render(<App />)
+    await waitFor(() => expect(hooks.voiceCommand).toBeTypeOf('function'))
+    expect(screen.queryByText('食指手势激活话筒')).toBeNull()
+    expect(screen.queryByLabelText('当前坐姿状态')).toBeNull()
+    expect(hooks.startMonitorSession).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByText('可选功能：坐姿提醒'))
+    fireEvent.click(screen.getByRole('button', { name: '开启坐姿提醒并校准' }))
+    expect(hooks.startMonitorSession).toHaveBeenCalledWith(undefined, { posture: true })
+    hooks.startMonitorSession.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: '一键启动极简 Windows 桌面手势控制' }))
+    await waitFor(() => expect(hooks.startMonitorSession).toHaveBeenCalledWith(undefined, { posture: false }))
   })
 })

@@ -2,7 +2,7 @@
 
 一个隐私优先的 Windows Codex 控制系统。它通过本地摄像头手势、可选的本机固定语音口令、Codex App Server 和安全快捷键桥控制核心 Codex 工作流；“端正”坐姿监测是同一悬浮 Dock 中的辅助模块。平时显示桌面角落的迷你摄像头 Dock，点击后展开完整控制面板。MediaPipe 全程在本机分析画面，不录制或上传视频；运行时只在首次进入姿态、手势、面具、人脸隐私、人物背景或物体识别时按需加载，OCR/图片工具启动不预载视觉推理包。麦克风电平与语音命令都默认关闭，只在用户明确开启时运行。
 
-本工作区由 Codex 任务“探索摄像头开源方案”迁移而来。原对话中的需求、决策、版本演进和验证结论见 [迁移档案](docs/imported-chat-exploration.md)，最初调研的开源项目见 [电脑摄像头开源方案地图](docs/open-source-camera-landscape.md)。当前源码候选版本为 0.6.1（验收中，尚未发布）；已发布的未签名预览版是 preview/v0.6.0，最新公开稳定版仍是 v0.5.0。已发布构建从 [GitHub Releases](https://github.com/silverlion2/codex-gesture-dock/releases) 下载。
+本工作区由 Codex 任务“探索摄像头开源方案”迁移而来。原对话中的需求、决策、版本演进和验证结论见 [迁移档案](docs/imported-chat-exploration.md)，最初调研的开源项目见 [电脑摄像头开源方案地图](docs/open-source-camera-landscape.md)。当前源码版本为 0.6.2；公开构建及签名状态以 [GitHub Releases](https://github.com/silverlion2/codex-gesture-dock/releases) 为准。0.6.2 默认只做手势识别，无需脸或身体入镜；坐姿模型只在主动开启坐姿提醒时加载。Windows 模式首屏直接提供启动、暂停和六个手势的具体摆法。
 
 需要快速了解项目定位和当前能力时，可阅读 [英文项目说明](PROJECT_DESCRIPTION.md) 或 [中文项目说明](docs/project-description-zh.md)；近期实现顺序、提交和验证证据见 [开发日志](docs/development-log.md)，面向版本的变化见 [CHANGELOG](CHANGELOG.md)。
 

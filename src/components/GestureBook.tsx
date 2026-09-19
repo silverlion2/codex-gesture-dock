@@ -1,9 +1,15 @@
 import {
+  ArrowLeftRight,
+  ArrowRightLeft,
   CheckCircle2,
   Hand,
+  LayoutGrid,
   ListTodo,
+  Maximize2,
   MessageCircle,
   Mic,
+  Minimize2,
+  MonitorDown,
   MousePointer2,
   MousePointerClick,
   MoveVertical,
@@ -21,6 +27,8 @@ import {
 interface GestureBookProps {
   enabled: boolean
   gesture: GestureViewState
+  cameraActive?: boolean
+  controlPaused?: boolean
   microphoneActive?: boolean
   mode?: GestureMode
 }
@@ -30,7 +38,19 @@ function liveLabel(
   gesture: GestureViewState,
   microphoneActive: boolean,
   mode: GestureMode,
+  cameraActive: boolean,
+  controlPaused: boolean,
 ) {
+  if (mode === 'windows') {
+    if (!cameraActive) return '摄像头未开启'
+    if (controlPaused || !enabled) return '控制已暂停'
+    if (gesture.modelPhase === 'idle') return '等待识别模型'
+    if (gesture.modelPhase === 'loading') return '正在加载识别模型'
+    if (gesture.modelPhase === 'error') return '识别模型异常'
+    if (gesture.awaitingNeutral) return '移开手，准备下一个动作'
+    if (gesture.binding) return `正在识别：${gesture.binding.gestureLabel}`
+    return '等待手势'
+  }
   if (!enabled) return '控制已暂停'
   if (microphoneActive) return 'Codex 话筒已激活'
   if (gesture.modelPhase === 'loading') return '正在加载识别模型'
@@ -57,9 +77,48 @@ function GestureActionIcon({ name }: { name: GestureName }) {
   return <PanelRightOpen {...props} />
 }
 
+function WindowsActionIcon({ name }: { name: GestureName }) {
+  const props = { size: 18, strokeWidth: 1.8, 'aria-hidden': true as const }
+  if (name === 'Victory') return <ArrowRightLeft {...props} />
+  if (name === 'Pointing_Up') return <LayoutGrid {...props} />
+  if (name === 'Open_Palm') return <MonitorDown {...props} />
+  if (name === 'Thumb_Up') return <Maximize2 {...props} />
+  if (name === 'ILoveYou') return <ArrowLeftRight {...props} />
+  return <Minimize2 {...props} />
+}
+
+const WINDOWS_GESTURE_DETAILS: Record<GestureName, { pose: string; effect: string }> = {
+  Victory: {
+    pose: '食指和中指张开，其余手指收拢',
+    effect: '相当于 Alt + Tab',
+  },
+  Pointing_Up: {
+    pose: '食指伸直向上，其余手指收拢',
+    effect: '查看所有窗口并选择',
+  },
+  Open_Palm: {
+    pose: '五指张开，掌心朝向镜头',
+    effect: '暂时收起所有窗口',
+  },
+  Thumb_Up: {
+    pose: '拇指伸直向上，其余手指收拢',
+    effect: '再次触发可还原窗口',
+  },
+  ILoveYou: {
+    pose: '拇指、食指、小指伸开，中指和无名指收拢',
+    effect: '返回上一个窗口',
+  },
+  Closed_Fist: {
+    pose: '五指收拢，握紧拳头',
+    effect: '收起窗口，不会关闭程序',
+  },
+}
+
 export function GestureBook({
   enabled,
   gesture,
+  cameraActive = true,
+  controlPaused = false,
   microphoneActive = false,
   mode = 'codex',
 }: GestureBookProps) {
@@ -99,7 +158,7 @@ export function GestureBook({
 
         <div className="gesture-book-live" aria-live="polite">
           <Radio size={14} aria-hidden="true" />
-          <span>{liveLabel(enabled, gesture, false, mode)}</span>
+          <span>{liveLabel(enabled, gesture, false, mode, cameraActive, controlPaused)}</span>
           <i aria-hidden="true">
             <b style={{ width: activity === 'idle' ? '0%' : '100%' }} />
           </i>
@@ -130,11 +189,11 @@ export function GestureBook({
     )
   }
   return (
-    <section className={`gesture-book ${enabled ? 'is-enabled' : 'is-disabled'}`}>
+    <section className={`gesture-book ${enabled ? 'is-enabled' : 'is-disabled'} ${mode === 'windows' ? 'windows-gesture-book' : ''}`}>
       <header className="gesture-book-header">
         <div>
-          <span>GESTURE BOOK · 06</span>
-          <strong>{mode === 'windows' ? 'Windows 全手势手册' : 'Codex 全手势手册'}</strong>
+          {mode !== 'windows' && <span>GESTURE BOOK · 06</span>}
+          <strong>{mode === 'windows' ? '六个手势，控制当前窗口' : 'Codex 全手势手册'}</strong>
         </div>
         {codexMicrophoneActive ? (
           <Mic className="gesture-mic-active" size={19} aria-hidden="true" />
@@ -145,7 +204,7 @@ export function GestureBook({
 
       <div className="gesture-book-live" aria-live="polite">
         <Radio size={14} aria-hidden="true" />
-        <span>{liveLabel(enabled, gesture, codexMicrophoneActive, mode)}</span>
+        <span>{liveLabel(enabled, gesture, codexMicrophoneActive, mode, cameraActive, controlPaused)}</span>
         <i aria-hidden="true">
           <b style={{ width: `${gesture.progress * 100}%` }} />
         </i>
@@ -158,11 +217,20 @@ export function GestureBook({
               className={gesture.gesture === name || gesture.binding === binding ? 'is-active' : ''}
               key={name}
             >
-              <span className="gesture-number">{String(index + 1).padStart(2, '0')}</span>
-              <b aria-hidden="true"><GestureActionIcon name={name} /></b>
+              {mode !== 'windows' && <span className="gesture-number">{String(index + 1).padStart(2, '0')}</span>}
+              <b aria-hidden="true">
+                {mode === 'windows' ? <WindowsActionIcon name={name} /> : <GestureActionIcon name={name} />}
+              </b>
               <div>
                 <strong>{binding.actionLabel}</strong>
-                <small>{binding.gestureLabel}</small>
+                {mode === 'windows' ? (
+                  <>
+                    <small className="gesture-pose">{WINDOWS_GESTURE_DETAILS[name].pose}</small>
+                    <small className="gesture-effect">{WINDOWS_GESTURE_DETAILS[name].effect}</small>
+                  </>
+                ) : (
+                  <small>{binding.gestureLabel}</small>
+                )}
               </div>
             </article>
           ),
@@ -173,6 +241,9 @@ export function GestureBook({
         <span>保持</span>
         <strong>0.85s</strong>
         <span>触发 · 松手复位</span>
+        {mode === 'windows' && (
+          <small>移开手，准备下一个动作；张开手掌执行“显示桌面”，不是紧急停止</small>
+        )}
       </footer>
     </section>
   )

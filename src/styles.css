@@ -9762,6 +9762,71 @@ html.electron-runtime.task-window body {
   }
 }
 
+/* Windows control is the primary task; camera/device tools are supporting context. */
+.is-expanded .widget-content.is-windows-workspace {
+  grid-template-columns: minmax(400px, 1fr) minmax(0, 1.15fr);
+}
+
+.windows-gesture-panel { display: flex; flex-direction: column; gap: 12px; }
+.desktop-mode-select { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #315940; font-size: 13px; }
+.desktop-mode-select select { min-height: 40px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: white; color: #243b2d; }
+.desktop-control-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.desktop-control-heading h1 { margin: 0; color: var(--ink); font-size: 24px; line-height: 1.3; letter-spacing: -0.03em; }
+.desktop-control-heading select { min-height: 36px; max-width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; color: var(--ink); background: white; font: inherit; font-size: 12px; }
+.desktop-control-intro, .desktop-start-hint, .desktop-preview-note { margin: 0; color: #56615a; font-size: 12px; line-height: 1.6; }
+.desktop-control-intro { font-size: 13px; }
+.desktop-start-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.desktop-start-actions button, .desktop-safety-row button, .desktop-voice-control button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 8px 12px; border: 1px solid #cbd6ce; border-radius: 10px; background: white; color: #244c34; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.desktop-start-actions .desktop-start-button { flex: 1 1 auto; border-color: var(--green); background: var(--green); color: white; font-size: 14px; }
+.desktop-start-actions button:hover:not(:disabled), .desktop-safety-row button:hover:not(:disabled), .desktop-voice-control button:hover:not(:disabled) { filter: brightness(0.94); }
+.desktop-start-actions button:disabled, .desktop-safety-row button:disabled, .desktop-voice-control button:disabled { cursor: wait; opacity: 0.65; }
+.desktop-preview-note { padding: 8px 12px; border-radius: 8px; background: #fff3dc; color: #714a10; }
+.desktop-safety-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.desktop-safety-row span { color: #56615a; font-size: 11px; line-height: 1.5; }
+.desktop-safety-row button[aria-pressed="true"] { background: #fff3dc; color: #714a10; }
+.desktop-action-result { margin: 0; padding: 10px 12px; border-radius: 8px; background: #e4f2e8; color: #234e32; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.desktop-action-result.is-error { background: #fff0ed; color: #8b3025; }
+.is-expanded .windows-gesture-book { padding: 16px; }
+.is-expanded .windows-gesture-book .gesture-book-header { min-height: 32px; }
+.is-expanded .windows-gesture-book .gesture-book-header strong { font-size: 16px; }
+.is-expanded .windows-gesture-book .gesture-book-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; gap: 0 16px; }
+.is-expanded .windows-gesture-book .gesture-book-grid article { grid-template-columns: 22px minmax(0, 1fr); align-items: start; gap: 8px; padding: 12px 0; border: 0; border-bottom: 1px solid #e3e9e4; border-radius: 0; background: transparent; }
+.is-expanded .windows-gesture-book .gesture-book-grid article.is-active { background: #e4f2e8; }
+.is-expanded .windows-gesture-book .gesture-book-grid article strong { overflow: visible; white-space: normal; font-size: 13px; line-height: 1.5; }
+.is-expanded .windows-gesture-book .gesture-book-grid article small { margin-top: 4px; color: #536059; font-size: 12px; line-height: 1.6; }
+.is-expanded .windows-gesture-book .gesture-book-grid article .gesture-effect { color: #536059; font-size: 11px; }
+.is-expanded .windows-gesture-book footer { flex-wrap: wrap; justify-content: flex-start; margin-top: 12px; font-size: 12px; line-height: 1.6; }
+.desktop-voice-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 12px; padding: 16px 0 4px; border-top: 1px solid #dce3dd; }
+.desktop-voice-control h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; }
+.desktop-voice-control p { margin: 4px 0 0; color: #536059; font-size: 12px; line-height: 1.6; }
+.desktop-voice-control .desktop-voice-hint { grid-column: 1 / -1; }
+.desktop-voice-control button[aria-pressed="true"] { background: #e4f2e8; }
+.desktop-camera-tools { position: relative; z-index: 8; }
+.desktop-camera-tools summary, .desktop-device-settings summary, .desktop-camera-help summary { cursor: pointer; padding: 10px 0; color: #315940; font-size: 12px; line-height: 1.5; }
+.desktop-camera-tools[open] .camera-mode-switcher { position: absolute; right: 0; width: 280px; max-width: 80vw; display: flex; flex-wrap: wrap; padding: 12px; background: white; border: 1px solid #cbd6ce; }
+.desktop-camera-tools[open] .camera-mode-switcher button { min-height: 36px; }
+.desktop-device-settings { flex: 0 0 auto; border-block: 1px solid #dce3dd; }
+.desktop-device-settings p { color: #536059; font-size: 12px; line-height: 1.6; }
+.desktop-camera-help { flex: 0 0 auto; padding: 16px; border: 1px solid var(--border); border-radius: 14px; background: white; }
+.desktop-camera-help h2 { margin: 0 0 8px; font-size: 16px; }
+.desktop-camera-help p { margin: 8px 0 0; color: #536059; font-size: 13px; line-height: 1.7; }
+.optional-posture-control button { min-height: 44px; margin-top: 8px; padding: 8px 12px; border: 1px solid #cbd6ce; border-radius: 8px; color: #244c34; background: white; cursor: pointer; font-size: 12px; }
+.is-windows-workspace .dashboard-monitor { overflow-y: auto; }
+.is-expanded .is-windows-workspace .dashboard-monitor .compact-camera { min-height: 230px; }
+
+@media (max-width: 860px) {
+  .is-expanded .widget-content.is-windows-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: max-content max-content; align-content: start; overflow-y: auto; }
+  .is-expanded .is-windows-workspace .windows-controls { min-height: min-content; overflow: visible; }
+  .is-expanded .is-windows-workspace .dashboard-monitor { min-height: 480px; overflow: visible; }
+}
+
+.is-windows-workspace :is(button, select, summary):focus-visible { outline: 2px solid var(--green-dark); outline-offset: 3px; }
+
+@media (max-width: 480px) {
+  .is-expanded .windows-gesture-book .gesture-book-grid { grid-template-columns: minmax(0, 1fr); }
+  .desktop-control-heading h1 { font-size: 22px; }
+}
+
 /* Expression mask workspace */
 .compact-camera .face-mask-canvas {
   z-index: 2;

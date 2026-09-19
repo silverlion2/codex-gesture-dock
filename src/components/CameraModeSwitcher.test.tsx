@@ -11,7 +11,7 @@ describe('CameraModeSwitcher', () => {
     const onChange = vi.fn()
     render(<CameraModeSwitcher mode="monitor" onChange={onChange} />)
 
-    expect(screen.getByRole('button', { name: '姿态' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: '手势' }).getAttribute('aria-pressed')).toBe('true')
     fireEvent.click(screen.getByRole('button', { name: '面具' }))
     expect(onChange).toHaveBeenCalledWith('masks')
     fireEvent.click(screen.getByRole('button', { name: '扫码' }))
