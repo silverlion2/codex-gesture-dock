@@ -1,5 +1,11 @@
 # Codex Gesture Dock 发布清单
 
+## 2026-11-06 QR 候选状态
+
+本轮为本地 QR 结果有效性修复，不发布、不安装、不启动真实摄像头/麦克风。`npm audit --audit-level=high --registry=https://registry.npmjs.org` 对当前未修改锁文件报告 26 项告警（15 moderate、8 high、3 critical）；这是独立依赖修复项，现有 CI audit 门禁不能通过。功能测试通过不等于版本可发布，必须完成依赖修复和最终候选 CI 后再评估。既有未跟踪 `optimization_plan.md` 保留。推送前还需按 portfolio-quality 的显式计划核对真实远端基线和全部新增提交范围。
+
+同日 `--omit=dev` 生产依赖审计仍有 1 项 critical（DOMPurify）；不能把全量告警统一归为开发工具风险。此处为 registry 审计结果，不声称已证实应用中的可利用路径。
+
 ## 0.6.2 发布候选 — 2026-09-19
 
 - 授权：用户在 UI/UX 与默认仅手势改动验收后明确要求 publish；仅发布，本轮不另行安装到本机。

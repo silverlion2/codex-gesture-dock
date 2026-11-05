@@ -6872,6 +6872,7 @@ select:focus-visible {
 }
 
 .qr-code-preview > img { width: min(100%, 330px); height: auto; display: block; image-rendering: pixelated; }
+.qr-code-preview:focus-visible { outline: 2px solid #1f7448; outline-offset: 2px; }
 .qr-code-preview > div { display: grid; justify-items: center; gap: 5px; color: #65806d; text-align: center; }
 .qr-code-preview > div strong { color: #31533d; font-size: 10px; }
 .qr-code-preview > div small { font-size: 7px; }

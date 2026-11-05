@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
+import { readFile } from 'node:fs/promises'
 
 // The .pw.ts suffix keeps this browser suite out of Vitest collection.
 async function expectAccessible(page: Page) {
@@ -17,6 +18,66 @@ async function expectAccessible(page: Page) {
     ),
   ).toEqual([])
 }
+
+test('QR generation exports the current content without media access and recovers from clipboard denial', async ({ page }) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  await page.addInitScript(() => {
+    let mediaRequests = 0
+    Object.defineProperty(window, '__qrMediaRequests', { get: () => mediaRequests })
+    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', { value: () => {
+      mediaRequests += 1
+      throw new Error('QR workflow must not request media')
+    } })
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: async () => {
+      throw new DOMException('Blocked in test', 'NotAllowedError')
+    } } })
+  })
+  await page.goto('/?mockTasks=1')
+  await page.getByText('摄像头、画面与麦克风电平设置', { exact: true }).click()
+  await page.getByText('更多镜头工具', { exact: true }).click()
+  await page.getByRole('button', { name: '扫码', exact: true }).click()
+  const panel = page.getByRole('region', { name: '扫码结果' })
+  await panel.getByRole('button', { name: '生成 QR', exact: true }).click()
+  await panel.getByLabel('二维码文字内容').fill('QR regression fixture 2026')
+  await panel.getByRole('button', { name: '生成二维码', exact: true }).click()
+  await expect(panel.getByRole('img', { name: '生成的文字二维码' })).toBeVisible()
+  await panel.getByRole('button', { name: '联系人', exact: true }).focus()
+  await page.keyboard.press('Tab')
+  await expect(panel.getByRole('region', { name: '二维码预览' })).toBeFocused()
+  await panel.getByRole('button', { name: '复制原始内容', exact: true }).click()
+  await expect(panel.getByRole('alert')).toContainText('剪贴板')
+  await expectAccessible(page)
+
+  const svgDownload = page.waitForEvent('download')
+  await panel.getByRole('button', { name: '导出 SVG', exact: true }).click()
+  const svg = await svgDownload
+  expect(svg.suggestedFilename()).toBe('qr-text.svg')
+  const svgBytes = await readFile((await svg.path())!, 'utf8')
+  expect(svgBytes).toContain('<svg')
+  expect(svgBytes).toContain('width="512"')
+
+  const pngDownload = page.waitForEvent('download')
+  await panel.getByRole('button', { name: '导出 PNG', exact: true }).click()
+  const png = await pngDownload
+  expect(png.suggestedFilename()).toBe('qr-text.png')
+  const pngBytes = await readFile((await png.path())!)
+  expect(pngBytes.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a')
+  expect(pngBytes.readUInt32BE(16)).toBe(512)
+  expect(pngBytes.readUInt32BE(20)).toBe(512)
+  await expect(panel.getByRole('alert')).toHaveCount(0)
+
+  await panel.getByLabel('二维码文字内容').fill('Updated fixture')
+  await expect(panel.getByRole('img')).toHaveCount(0)
+  await expect(panel.getByRole('button', { name: '导出 SVG', exact: true })).toHaveCount(0)
+  await panel.getByRole('button', { name: '生成二维码', exact: true }).click()
+  await expect(panel.getByRole('img')).toBeVisible()
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expectAccessible(page)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  expect(pageErrors).toEqual([])
+  expect(await page.evaluate(() => Reflect.get(window, '__qrMediaRequests'))).toBe(0)
+})
 
 test('expanded dashboard meets automated accessibility rules', async ({ page }) => {
   await page.goto('/?mockTasks=1')

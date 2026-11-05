@@ -57,10 +57,7 @@ export function QrCodeCreatorPanel({ onMessage }: QrCodeCreatorPanelProps) {
 
   const clearPreview = () => {
     requestRef.current += 1
-    setPreview((current) => {
-      if (current) URL.revokeObjectURL(current.url)
-      return null
-    })
+    setPreview(null)
     setPhase('editing')
     setError('')
     setCopied(false)
@@ -68,6 +65,9 @@ export function QrCodeCreatorPanel({ onMessage }: QrCodeCreatorPanelProps) {
 
   useEffect(() => () => {
     requestRef.current += 1
+  }, [])
+
+  useEffect(() => () => {
     if (preview) URL.revokeObjectURL(preview.url)
   }, [preview])
 
@@ -80,7 +80,8 @@ export function QrCodeCreatorPanel({ onMessage }: QrCodeCreatorPanelProps) {
   })
 
   const generate = async () => {
-    const request = ++requestRef.current
+    clearPreview()
+    const request = requestRef.current
     setPhase('generating')
     setError('')
     try {
@@ -88,10 +89,7 @@ export function QrCodeCreatorPanel({ onMessage }: QrCodeCreatorPanelProps) {
       const svg = await createQrSvg(payload, size)
       if (request !== requestRef.current) return
       const objectUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }))
-      setPreview((current) => {
-        if (current) URL.revokeObjectURL(current.url)
-        return { payload, svg, url: objectUrl }
-      })
+      setPreview({ payload, svg, url: objectUrl })
       setPhase('ready')
       onMessage(`已在本机生成 ${labels[kind]}二维码，请用另一台设备试扫后导出`)
     } catch (caught) {
@@ -103,8 +101,11 @@ export function QrCodeCreatorPanel({ onMessage }: QrCodeCreatorPanelProps) {
 
   const exportPng = async () => {
     if (!preview) return
+    const request = requestRef.current
+    setError('')
     try {
       const image = await loadImage(preview.url)
+      if (request !== requestRef.current) return
       const canvas = document.createElement('canvas')
       canvas.width = size
       canvas.height = size
@@ -115,26 +116,36 @@ export function QrCodeCreatorPanel({ onMessage }: QrCodeCreatorPanelProps) {
       context.imageSmoothingEnabled = false
       context.drawImage(image, 0, 0, size, size)
       const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error('二维码 PNG 编码失败')), 'image/png'))
+      if (request !== requestRef.current) return
       const pngUrl = URL.createObjectURL(blob)
       downloadUrl(pngUrl, qrCodeFilename(kind, 'png'))
       setTimeout(() => URL.revokeObjectURL(pngUrl), 1_000)
       onMessage('已请求下载二维码 PNG')
     } catch (caught) {
+      if (request !== requestRef.current) return
       setError(caught instanceof Error ? caught.message : '二维码 PNG 导出失败')
-      setPhase('error')
     }
   }
 
   const copyPayload = async () => {
     if (!preview) return
-    await navigator.clipboard.writeText(preview.payload)
-    setCopied(true)
-    onMessage('已复制二维码原始内容；应用不会自动打开其中的网址')
+    const request = requestRef.current
+    setError('')
+    setCopied(false)
+    try {
+      await navigator.clipboard.writeText(preview.payload)
+      if (request !== requestRef.current) return
+      setCopied(true)
+      onMessage('已复制二维码原始内容；应用不会自动打开其中的网址')
+    } catch {
+      if (request !== requestRef.current) return
+      setError('无法复制内容，请检查剪贴板权限后重试')
+    }
   }
 
   const fieldChanged = <T,>(setter: (value: T) => void, value: T) => {
     setter(value)
-    if (preview || phase === 'error') clearPreview()
+    clearPreview()
   }
 
   return (
@@ -143,7 +154,7 @@ export function QrCodeCreatorPanel({ onMessage }: QrCodeCreatorPanelProps) {
         {(Object.keys(labels) as QrPayloadKind[]).map((value) => <button key={value} type="button" aria-pressed={kind === value} onClick={() => fieldChanged(setKind, value)}>{labels[value]}</button>)}
       </div>
       <div className="qr-code-creator-grid">
-        <div className="qr-code-preview">
+        <div className="qr-code-preview" role="region" aria-label="二维码预览" tabIndex={0}>
           {preview ? <img src={preview.url} alt={`生成的${labels[kind]}二维码`} /> : <div><QrCode size={38} aria-hidden="true" /><strong>待生成二维码</strong><small>内容与图像均留在本机</small></div>}
         </div>
         <div className="qr-code-fields">
@@ -164,7 +175,7 @@ export function QrCodeCreatorPanel({ onMessage }: QrCodeCreatorPanelProps) {
           </>}
           <label><span>输出尺寸</span><select aria-label="二维码输出尺寸" value={size} onChange={(event) => fieldChanged(setSize, Number(event.target.value))}><option value={256}>256 × 256px</option><option value={512}>512 × 512px</option><option value={1024}>1024 × 1024px</option></select></label>
           {phase === 'generating' && <div className="qr-code-status" role="status"><span className="small-spinner" aria-hidden="true" />正在本机生成二维码</div>}
-          {phase === 'error' && <div className="document-scan-error" role="alert"><strong>{error}</strong><small>请检查内容长度和格式后重试</small></div>}
+          {error && <div className="document-scan-error" role="alert"><strong>{error}</strong>{phase === 'error' && <small>请检查内容长度和格式后重试</small>}</div>}
           <div className="qr-code-actions">
             <button type="button" disabled={phase === 'generating'} onClick={() => void generate()}><QrCode size={13} aria-hidden="true" />{preview ? '重新生成' : '生成二维码'}</button>
             {preview && <button type="button" onClick={() => downloadUrl(preview.url, qrCodeFilename(kind, 'svg'))}><Download size={13} aria-hidden="true" />导出 SVG</button>}

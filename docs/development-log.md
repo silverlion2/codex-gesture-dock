@@ -5,6 +5,22 @@ It complements the user-facing [changelog](../CHANGELOG.md): the changelog group
 notable behavior by release, while this file preserves the sequence, commit, and
 verification evidence of development work.
 
+## 2026-11-06 — QR output lifecycle and keyboard access
+
+Editing a field while SVG generation was pending could publish the old payload under the new form. Pending PNG exports also continued downloading after editing/unmount, and clipboard denial escaped as an unhandled rejection. Nine added regression cases initially produced eight failed assertions and two unhandled rejections. The final 15 component cases cover those races, image decoding/encoding, unmount, retry, and StrictMode URL cleanup; the existing five payload/writer cases remain in place.
+
+Each edit, regeneration, return to editing and unmount now invalidates pending work. SVG, PNG and clipboard completions check that generation before changing feedback or downloading. Preview URL cleanup has one owner. Clipboard errors preserve the preview and output controls; an OS clipboard operation already started cannot be recalled.
+
+The new production-browser path reproduced a serious Axe keyboard finding in the scrollable preview. A named, focusable region and visible focus outline address it. Seven Playwright scenarios pass, including actual SVG/512px PNG downloads, clipboard denial, field invalidation, desktop/mobile Axe checks and no horizontal overflow. The QR case rejects media requests and uses mock tasks. Browser plugin not available; the existing Playwright runner was used.
+
+Local evidence is under ignored `work/quality-20261106-qr/`. Current npm registry audit reports 26 affected package entries (15 moderate, 8 high, 3 critical) against the unchanged lockfile; this separate dependency backlog prevents claiming release readiness. No production release, installation, real media capture or native desktop action was performed. The pre-existing untracked `optimization_plan.md` is preserved.
+
+The production-only (`--omit=dev`) audit reports one critical DOMPurify entry. This is a dependency advisory observation, not a demonstrated exploit in this application.
+
+Final local `npm test`: 466 Vitest cases plus 11 release-script cases, all passed without skips. Lint, TypeScript, production build, version consistency and 73-component license checks passed. The seven browser scenarios passed; the QR scenario was then strengthened to assert actual Tab reachability and zero media requests and passed again. Dependency audit remains failed, and no candidate CI or production acceptance is claimed.
+
+`web-sop doctor` was READY before implementation. Final `web-sop check --mode fast` passed its configured TypeScript, lint, full test and build commands. Fast mode does not run the dependency audit; its green result does not remove the audit blocker above.
+
 ## 2026-09-09 — Canonical Windows release asset evidence
 
 Commits:
