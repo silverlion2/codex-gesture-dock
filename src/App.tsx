@@ -996,11 +996,7 @@ function WidgetApp() {
                 type="button"
                 disabled={windowsControlBusy}
                 aria-pressed={integrationStatus?.control?.enabled ?? true}
-                aria-label={
-                  integrationStatus?.control?.enabled === false
-                    ? '恢复 Windows 控制'
-                    : '暂停 Windows 控制'
-                }
+                aria-labelledby="windows-control-toggle-label"
                 onClick={() =>
                   void setWindowsControlEnabled(
                     !(integrationStatus?.control?.enabled ?? true),
@@ -1012,7 +1008,7 @@ function WidgetApp() {
                 ) : (
                   <PauseCircle size={18} aria-hidden="true" />
                 )}
-                <span>
+                <span id="windows-control-toggle-label">
                   <strong>
                     {integrationStatus?.control?.enabled === false
                       ? '恢复 Windows 控制'

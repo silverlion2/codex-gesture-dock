@@ -21,7 +21,7 @@ const projectRoot = path.resolve(
   '..',
 )
 
-test('napi canvas x64 native packages use the verified bundled MIT text', async () => {
+test('napi canvas x64 native packages use the verified complete bundled notice', async () => {
   const fallbacks = new Map(createNapiCanvasLicenseFallbacks(projectRoot))
   const expectedPackages = [
     '@napi-rs/canvas-win32-x64-msvc',
@@ -39,6 +39,7 @@ test('napi canvas x64 native packages use the verified bundled MIT text', async 
   const contents = await readFile(napiCanvasLicensePath(projectRoot))
   const digest = createHash('sha256').update(contents).digest('hex')
   assert.equal(digest, napiCanvasLicenseSha256)
+  assert.match(contents.toString(), /Copyright 2015 The Chromium Authors/)
 })
 
 test('napi canvas fallback coverage does not widen to other platforms', () => {
@@ -71,8 +72,8 @@ test('generator keeps platform notices identical and rejects unapproved licenses
   await writeFile(queryCli, `import { readFileSync } from 'node:fs';
 process.stdout.write(readFileSync(new URL('./packages.json', import.meta.url)));
 `)
-  const parent = { name: napiCanvasParentPackage, version: '1.0.3', license: 'MIT', path: path.join(root, 'packages/parent') }
-  const native = { name: napiCanvasPlatformPackages[0], version: '1.0.3', license: 'MIT', path: path.join(root, 'packages/native') }
+  const parent = { name: napiCanvasParentPackage, version: '1.1.0', license: 'MIT', path: path.join(root, 'packages/parent') }
+  const native = { name: napiCanvasPlatformPackages[0], version: '1.1.0', license: 'MIT', path: path.join(root, 'packages/native') }
   const outputs = ['THIRD_PARTY_NOTICES.md', 'third_party_licenses/npm-production-licenses.txt']
   async function run(entries, ...args) {
     await writeFile(path.join(root, 'packages.json'), JSON.stringify(entries))
@@ -91,8 +92,10 @@ process.stdout.write(readFileSync(new URL('./packages.json', import.meta.url)));
   const initial = await run([parent, native])
   assert.equal(initial.status, 0, initial.stderr)
   const baseline = await readOutputs()
-  assert.match(baseline[0], /\| @napi-rs\/canvas \| 1\.0\.3 \| MIT \|/)
+  assert.match(baseline[0], /\| @napi-rs\/canvas \| 1\.1\.0 \| MIT \|/)
   assert.match(baseline[1], /Copyright \(c\) 2020/)
+  assert.match(baseline[1], /Copyright 2015 The Chromium Authors/)
+  assert.match(baseline[1], /Neither the name of Google LLC/)
   assert.match(baseline[1], /Source file: third_party_licenses\/Noto-Sans-SC-OFL-1\.1\.txt/)
   assert.doesNotMatch(baseline[1], /Source file: .*\\/)
   for (const name of napiCanvasPlatformPackages) {

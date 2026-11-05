@@ -5,6 +5,12 @@ It complements the user-facing [changelog](../CHANGELOG.md): the changelog group
 notable behavior by release, while this file preserves the sequence, commit, and
 verification evidence of development work.
 
+## 2026-11-06 — Audited dependency graph and consumer validation
+
+Refreshed the lockfile within the existing direct dependency ranges and raised the Electron, builder, Vite, Vitest and TypeScript ESLint minimums. Only minimatch 9/10 requests are overridden to 11.0.4; legacy callable 3/5 users retain compatible versions. Clean install and the actual installed tree now pass full and production-only npm audits with zero known entries. Deprecated tooling remains a separately documented migration concern.
+
+Three new default release-script cases verify actual builder filtering, synthetic ASAR allowlists and TypeScript project-service matching. The Canvas 1.1.0 version/content gate and complete Chromium attribution were reviewed and retained, with fail-closed license tests preserved. Final SOP fast passed TypeScript, lint, the complete tests and build. Evidence, exact versions and limitations are in [dependency-refresh-20261106.md](dependency-refresh-20261106.md); local logs are ignored under `work/quality-20261106-dependencies/`. No production release or local user-app installation occurred.
+
 ## 2026-11-06 — QR output lifecycle and keyboard access
 
 Editing a field while SVG generation was pending could publish the old payload under the new form. Pending PNG exports also continued downloading after editing/unmount, and clipboard denial escaped as an unhandled rejection. Nine added regression cases initially produced eight failed assertions and two unhandled rejections. The final 15 component cases cover those races, image decoding/encoding, unmount, retry, and StrictMode URL cleanup; the existing five payload/writer cases remain in place.

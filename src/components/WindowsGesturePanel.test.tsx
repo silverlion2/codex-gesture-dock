@@ -45,17 +45,18 @@ describe('WindowsGesturePanel', () => {
     const onStart = vi.fn()
     const { rerender, props } = renderPanel({ onStart })
 
-    fireEvent.click(screen.getByRole('button', { name: '一键启动极简 Windows 桌面手势控制' }))
+    fireEvent.click(screen.getByRole('button', { name: '启动手势 · 进入悬浮球' }))
     expect(onStart).toHaveBeenCalledOnce()
-    expect(screen.getByRole('button', { name: '一键启动极简 Windows 桌面手势控制' }).textContent).toContain('启动手势 · 进入悬浮球')
+    expect(screen.getByRole('button', { name: '启动手势 · 进入悬浮球' }).textContent).toContain('启动手势 · 进入悬浮球')
 
     rerender(<WindowsGesturePanel {...props} cameraActive />)
-    expect(screen.getByRole('button', { name: '一键启动极简 Windows 桌面手势控制' }).textContent).toContain('进入手势悬浮球')
+    expect(screen.getByRole('button', { name: '进入手势悬浮球' }).textContent).toContain('进入手势悬浮球')
   })
 
   it('offers cancel during startup and stop when the camera is active', () => {
     const onStop = vi.fn()
     const { rerender, props } = renderPanel({ starting: true, onStop })
+    expect((screen.getByRole('button', { name: '正在准备摄像头与手势…' }) as HTMLButtonElement).disabled).toBe(true)
 
     fireEvent.click(screen.getByRole('button', { name: '取消启动' }))
     expect(onStop).toHaveBeenCalledOnce()
@@ -97,7 +98,7 @@ describe('WindowsGesturePanel', () => {
         voice={{ ...listeningVoice, phase: 'starting', message: '正在启动语音识别' }}
       />,
     )
-    expect((screen.getByRole('button', { name: '关闭语音控制' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: '正在开启…' }) as HTMLButtonElement).disabled).toBe(true)
     expect(screen.getByText('正在启动语音识别')).toBeTruthy()
   })
 

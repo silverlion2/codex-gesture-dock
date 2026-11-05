@@ -188,7 +188,7 @@ test('camera stays usable at the small Windows runner work area', async ({ page 
   const camera = await page.locator('.compact-camera').boundingBox()
   expect(camera?.width ?? 0).toBeGreaterThan(300)
   expect(camera?.height ?? 0).toBeGreaterThan(240)
-  await expect(page.getByRole('button', { name: '一键启动极简 Windows 桌面手势控制' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '启动手势 · 进入悬浮球', exact: true })).toBeVisible()
   await expectAccessible(page)
 })
 

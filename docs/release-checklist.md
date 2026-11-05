@@ -1,5 +1,9 @@
 # Codex Gesture Dock 发布清单
 
+## 2026-11-06 依赖更新候选
+
+本节更新下方 QR 初始候选的审计状态：重新解析锁文件并干净安装后，全量与生产依赖的官方 registry audit 均为 0 项；锁文件 SHA-256 为 `1b2979022e8b7575745fbd0813f2015f1cb8779aaa0072999131e42039994cb2`，安装后未改变。新增依赖调用回归、完整 Canvas 署名检查及最终 SOP fast（typecheck/lint/全部测试/build）通过。仅表示本地候选通过这些检查，候选 CI、原生打包与发布仍需各自证据；没有发布或安装用户应用。详情见 [dependency-refresh-20261106.md](dependency-refresh-20261106.md)。
+
 ## 2026-11-06 QR 候选状态
 
 本轮为本地 QR 结果有效性修复，不发布、不安装、不启动真实摄像头/麦克风。`npm audit --audit-level=high --registry=https://registry.npmjs.org` 对当前未修改锁文件报告 26 项告警（15 moderate、8 high、3 critical）；这是独立依赖修复项，现有 CI audit 门禁不能通过。功能测试通过不等于版本可发布，必须完成依赖修复和最终候选 CI 后再评估。既有未跟踪 `optimization_plan.md` 保留。推送前还需按 portfolio-quality 的显式计划核对真实远端基线和全部新增提交范围。
