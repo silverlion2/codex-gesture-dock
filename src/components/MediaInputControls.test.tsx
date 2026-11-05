@@ -38,7 +38,7 @@ describe('media input controls', () => {
       target: { value: 'desk' },
     })
     fireEvent.click(screen.getByRole('button', { name: '完整' }))
-    fireEvent.click(screen.getByRole('button', { name: '打开麦克风' }))
+    fireEvent.click(screen.getByRole('button', { name: '麦克风关闭，打开麦克风' }))
 
     expect(props.onVideoDeviceChange).toHaveBeenCalledWith('front')
     expect(props.onAudioDeviceChange).toHaveBeenCalledWith('desk')
@@ -57,5 +57,14 @@ describe('media input controls', () => {
         .getByRole('meter', { name: '麦克风输入电平' })
         .getAttribute('aria-valuenow'),
     ).toBe('0')
+  })
+
+  it('keeps the visible microphone status in the accessible name while loading and active', () => {
+    const props = mediaProps()
+    const { rerender } = render(<CompactMediaControls {...props} audioPhase="loading" />)
+    expect(screen.getByRole('button', { name: '连接中，关闭麦克风' }).textContent).toContain('连接中')
+    rerender(<CompactMediaControls {...props} audioPhase="active" />)
+    fireEvent.click(screen.getByRole('button', { name: '麦克风开启，关闭麦克风' }))
+    expect(props.onAudioToggle).toHaveBeenCalledOnce()
   })
 })

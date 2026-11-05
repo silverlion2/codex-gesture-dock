@@ -115,12 +115,13 @@ function AudioToggle({
   const active = audioPhase === 'active'
   const loading = audioPhase === 'loading'
   const levelPercent = Math.round(audioLevel * 100)
+  const statusLabel = loading ? '连接中' : active ? '麦克风开启' : '麦克风关闭'
 
   return (
     <div className={`audio-input-toggle ${active ? 'is-active' : ''}`}>
       <button
         type="button"
-        aria-label={active || loading ? '关闭麦克风' : '打开麦克风'}
+        aria-label={`${statusLabel}，${active || loading ? '关闭麦克风' : '打开麦克风'}`}
         aria-pressed={active || loading}
         onClick={onAudioToggle}
       >
@@ -129,7 +130,7 @@ function AudioToggle({
         ) : (
           <MicOff size={16} aria-hidden="true" />
         )}
-        <span>{loading ? '连接中' : active ? '麦克风开启' : '麦克风关闭'}</span>
+        <span>{statusLabel}</span>
       </button>
       <span
         className="audio-level-meter"

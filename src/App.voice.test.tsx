@@ -160,7 +160,7 @@ describe('App voice command routing', () => {
     fireEvent.click(screen.getByRole('button', { name: '开启坐姿提醒并校准' }))
     expect(hooks.startMonitorSession).toHaveBeenCalledWith(undefined, { posture: true })
     hooks.startMonitorSession.mockClear()
-    fireEvent.click(screen.getByRole('button', { name: '一键启动极简 Windows 桌面手势控制' }))
+    fireEvent.click(screen.getByRole('button', { name: '启动手势 · 进入悬浮球' }))
     await waitFor(() => expect(hooks.startMonitorSession).toHaveBeenCalledWith(undefined, { posture: false }))
   })
 })

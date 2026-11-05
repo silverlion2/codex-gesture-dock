@@ -140,7 +140,7 @@ for (const entry of packages) {
     continue
   }
 
-  // Aggregation is approved only for this release and identical MIT text.
+  // Aggregation is approved only for this release and its full combined notice.
   // Check bundled licenses too: a new NOTICE must never be silently dropped.
   if (entry.name === napiCanvasParentPackage || usesNapiCanvasParentNotice(entry.name)) {
     if (entry.version !== napiCanvasApprovedVersion || license !== 'MIT') {
